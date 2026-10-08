@@ -62,29 +62,18 @@ function notify(message, type = "info") {
 
 function setBusy(active, message = "Memproses...") {
   state.loading = Boolean(active);
-  let overlay = $("appBusy");
 
-  if (!overlay) {
-    overlay = document.createElement("div");
-    overlay.id = "appBusy";
-    overlay.setAttribute("role", "status");
-    overlay.setAttribute("aria-live", "polite");
-    overlay.style.cssText = [
-      "position:fixed",
-      "inset:0",
-      "z-index:9998",
-      "place-items:center",
-      "background:#09241f88",
-      "color:#fff",
-      "font:700 16px Segoe UI,Arial"
-    ].join(";");
-    document.body.appendChild(overlay);
+  // Tidak menggunakan overlay layar penuh. Dengan demikian aplikasi
+  // tidak pernah terkunci jika request Supabase lambat atau gagal.
+  document.getElementById("appBusy")?.remove();
+  document.body.style.overflow = "";
+  document.body.style.cursor = active ? "progress" : "";
+
+  const status = document.getElementById("appStatus");
+  if (status) {
+    status.textContent = active ? message : "";
+    status.hidden = !active;
   }
-
-  overlay.textContent = message;
-  overlay.style.display = active ? "grid" : "none";
-  overlay.setAttribute("aria-hidden", active ? "false" : "true");
-  document.body.style.overflow = active ? "hidden" : "";
 }
 
 /* ======================== ROLE & LOGIN ======================== */
@@ -121,15 +110,22 @@ async function login(event) {
   const password = value("password");
   if (!email || !password) return notify("Email dan password wajib diisi.", "error");
   setBusy(true, "Login...");
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  setBusy(false);
-  if (error) {
+  try {
+    const { data, error } = await withTimeout(
+      supabaseClient.auth.signInWithPassword({ email, password }),
+      20000,
+      "Login"
+    );
+    if (error) throw error;
+    await applySession(data.session);
+    closeModal("loginModal");
+    notify(`Login berhasil sebagai ${state.role}.`, "success");
+  } catch (error) {
     if ($("loginError")) $("loginError").textContent = error.message;
-    return notify(`Login gagal: ${error.message}`, "error");
+    notify(`Login gagal: ${error.message}`, "error");
+  } finally {
+    setBusy(false);
   }
-  await applySession(data.session);
-  closeModal("loginModal");
-  notify(`Login berhasil sebagai ${state.role}.`, "success");
 }
 
 async function logout() {
@@ -184,6 +180,14 @@ function stableAssetUid(asset) {
 
 /* ======================== DATA LOADING ======================== */
 
+function withTimeout(promise, milliseconds = 20000, label = "Permintaan") {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} melebihi batas waktu ${milliseconds / 1000} detik`)), milliseconds);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function fetchAllRows(table, orderColumn = null) {
   if (!supabaseClient) return [];
   const all = [];
@@ -191,7 +195,7 @@ async function fetchAllRows(table, orderColumn = null) {
   while (true) {
     let request = supabaseClient.from(table).select("*").range(from, from + 999);
     if (orderColumn) request = request.order(orderColumn, { ascending: false });
-    const { data, error } = await request;
+    const { data, error } = await withTimeout(request, 20000, `Memuat ${table}`);
     if (error) throw error;
     if (!data?.length) break;
     all.push(...data);
@@ -241,7 +245,7 @@ async function loadPhotos(assetId = null) {
   if (!supabaseClient) return [];
   let request = supabaseClient.from("asset_photos").select("*").eq("is_active", true).order("uploaded_at", { ascending: false });
   if (assetId) request = request.eq("asset_id", assetId);
-  const { data, error } = await request;
+  const { data, error } = await withTimeout(request, 20000, `Memuat ${table}`);
   if (error) throw error;
   if (!assetId) state.photos = data || [];
   return data || [];
@@ -863,23 +867,6 @@ function bindEvents() {
   qa(".modal").forEach((modal) => modal.addEventListener("click", (event) => { if (event.target === modal) closeModal(modal.id); }));
 }
 
-function clearStuckBusyOverlay() {
-  const overlay = $("appBusy");
-  if (overlay) overlay.style.display = "none";
-  document.body.style.overflow = "";
-  state.loading = false;
-}
-
-// Pengaman terakhir agar overlay tidak menutup aplikasi tanpa batas.
-window.addEventListener("pageshow", () => {
-  window.setTimeout(() => {
-    if (state.loading) {
-      clearStuckBusyOverlay();
-      notify("Pemuatan terlalu lama dihentikan. Data yang sudah tersedia tetap ditampilkan.", "error");
-    }
-  }, 20000);
-});
-
 async function initializeApp() {
   if (!supabaseClient) {
     notify("Konfigurasi Supabase tidak ditemukan. Periksa config.js.", "error");
@@ -890,7 +877,13 @@ async function initializeApp() {
   }
   const { data: { session } } = await supabaseClient.auth.getSession();
   await applySession(session);
-  supabaseClient.auth.onAuthStateChange(async (_event, nextSession) => applySession(nextSession));
+  supabaseClient.auth.onAuthStateChange(async (_event, nextSession) => {
+    try {
+      await applySession(nextSession);
+    } finally {
+      setBusy(false);
+    }
+  });
   bindEvents();
   ensurePhotoModal();
   await loadAssets();

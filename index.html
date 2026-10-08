@@ -1,123 +1,402 @@
-<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b5c4b"><title>PIM EI & OT Asset Register</title><link rel="stylesheet" href="style.css"></head><body>
-<header><div><b>PIM EI & OT</b><small>Asset Register & Documentation</small></div><nav><button data-view="dashboard">Dashboard</button><button data-view="assets">Daftar Aset</button><button id="manageBtn" class="hidden" data-view="manage">Kelola</button></nav><div id="userBox"><span id="roleBadge">VIEWER</span><button id="loginBtn">Login</button><button id="logoutBtn" class="hidden">Logout</button></div></header>
-<main>
-<section id="dashboard" class="view"><div class="hero"><div><h1>Dashboard Dokumentasi Aset</h1><p>Informasi EI & OT terpusat, interaktif, dan selalu mengikuti data terbaru.</p></div><div class="search"><input id="globalSearch" placeholder="Cari tagname, equipment, funloc, area..."><button onclick="showView('assets')">Cari</button></div></div>
-<div id="kpis" class="kpis"></div><div class="grid"><article class="panel map-panel"><div class="panel-head"><div><h2>Denah Area Pabrik</h2><p>Klik marker atau pilih area untuk membuka daftar aset.</p></div><select id="mapArea"></select></div><div class="map"><img src="assets/denah-area-pabrik.png" alt="Denah area pabrik"><div id="markers"></div></div></article><article class="panel"><h2>Distribusi Area</h2><div id="areaChart" class="bars"></div></article></div>
-<div class="panel"><div class="panel-head"><h2>Aset Terbaru / Diperbarui</h2><button onclick="showView('assets')">Lihat semua</button></div><div id="recent"></div></div></section>
-<section id="assets" class="view hidden"><div class="page-head"><div><h1>Daftar Aset</h1><p id="assetCount"></p></div><div class="actions"><button onclick="exportCSV()">Unduh CSV</button><button id="addBtn" class="primary hidden" onclick="openEditor()">+ Tambah Aset</button></div></div><div class="filters"><input id="search" placeholder="Cari semua kolom"><select id="areaFilter"></select><select id="categoryFilter"></select><select id="statusFilter"><option value="">Semua Status</option><option>Active</option><option>Inactive</option><option>Repair</option></select></div><div class="table-wrap"><table><thead><tr><th>Category</th><th>Tagname</th><th>Functional Location</th><th>Equipment No.</th><th>Plant/Area</th><th>Area Mapping</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="assetRows"></tbody></table></div><div id="pager" class="pager"></div></section>
-<section id="manage" class="view hidden"><div class="page-head"><div><h1>Kelola Database</h1><p>Import memperbarui data berdasarkan identitas aset, bukan menambah duplikat.</p></div></div><div class="manage-grid"><article class="panel"><h2>Import Excel</h2><p>Pilih workbook asset register. Data lama yang cocok akan diperbarui, aset baru akan ditambahkan. Dokumentasi dan foto tetap dipertahankan.</p><input id="excelFile" type="file" accept=".xlsx,.xls"><button class="primary" onclick="importExcel()">Import & Sinkronkan</button><div id="importStatus"></div></article><article class="panel"><h2>Ringkasan Akses</h2><ul><li><b>Viewer:</b> hanya melihat dashboard dan aset.</li><li><b>Technician:</b> memperbarui kondisi, status, catatan, dan foto.</li><li><b>Administrator:</b> akses penuh termasuk tambah, hapus, dan import.</li></ul></article></div></section>
-</main>
-<div id="loginModal" class="modal hidden"><form id="loginForm" class="dialog"><button type="button" class="close" onclick="closeModal('loginModal')">×</button><h2>Login Internal</h2><label>Email<input id="email" type="email" required></label><label>Password<input id="password" type="password" required></label><button class="primary" type="submit">Login</button><p id="loginError" class="error"></p></form></div>
-<div id="editModal" class="modal hidden"><form id="editForm" class="dialog wide"><button type="button" class="close" onclick="closeModal('editModal')">×</button><h2 id="editTitle">Data Aset</h2><input id="assetId" type="hidden"><div class="form-grid"><label>Category<input id="fCategory" required></label><label>Tagname<input id="fTagname" required></label><label>Functional Location<input id="fFunloc"></label><label>Equipment No.<input id="fEquipment"></label><label>Plant/Area<input id="fPlant"></label><label>Area Mapping<select id="fArea"></select></label><label>Brand<input id="fBrand"></label><label>Model<input id="fModel"></label><label>Status<select id="fStatus"><option>Active</option><option>Inactive</option><option>Repair</option></select></label><label>Condition<select id="fCondition"><option>Good</option><option>Warning</option><option>Bad</option><option>Unknown</option></select></label><div class="full asset-photo-section">
-  <label class="asset-photo-label">
-    Foto Aset
-  </label>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b5c4b">
+  <meta name="description" content="PIM EI & OT Asset Register and Documentation">
+  <title>PIM EI & OT Asset Register</title>
 
-  <!-- URL foto tetap disimpan di belakang layar -->
-  <input
-    id="fPhoto"
-    name="photo_url"
-    type="hidden"
-  >
+  <link rel="stylesheet" href="style.css?v=20261008-email-final-1">
 
-  <!-- Input khusus kamera HP -->
-  <input
-    id="assetCameraInput"
-    type="file"
-    accept="image/*"
-    capture="environment"
-    class="hidden"
-  >
+  <style>
+    /* Pengaman: elemen pemrosesan lama tidak boleh menutup halaman. */
+    #appBusy,
+    .loading-overlay,
+    .processing-overlay {
+      display: none !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+    }
 
-  <!-- Input galeri HP atau file komputer -->
-  <input
-    id="assetGalleryInput"
-    type="file"
-    accept="image/jpeg,image/png,image/webp"
-    class="hidden"
-  >
+    html,
+    body {
+      overflow: auto !important;
+    }
 
-  <div class="asset-photo-buttons">
-    <button
-      id="takeAssetPhotoBtn"
-      type="button"
-      class="asset-photo-button asset-camera-button"
-      onclick="openAssetCamera()"
-    >
-      <span class="asset-photo-button-icon">📷</span>
-      Ambil Foto
-    </button>
+    .app-inline-status {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 9000;
+      max-width: min(380px, calc(100vw - 32px));
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: #174f42;
+      color: #fff;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+      font-size: 13px;
+    }
 
-    <button
-      id="chooseAssetPhotoBtn"
-      type="button"
-      class="asset-photo-button asset-gallery-button"
-      onclick="openAssetGallery()"
-    >
-      <span class="asset-photo-button-icon">🖼️</span>
-      Pilih Foto
-    </button>
-
-    <button
-      id="removeAssetPhotoBtn"
-      type="button"
-      class="asset-photo-button asset-remove-button hidden"
-      onclick="removeAssetPhoto()"
-    >
-      <span class="asset-photo-button-icon">🗑️</span>
-      Hapus Foto
-    </button>
-  </div>
-
-  <div id="assetPhotoPreviewContainer"
-       class="asset-photo-preview-container">
-
-    <div id="assetPhotoEmpty"
-         class="asset-photo-empty">
-
-      <div class="asset-photo-empty-icon">
-        📷
-      </div>
-
-      <strong>Belum ada foto aset</strong>
-
-      <span>
-        Ambil foto langsung atau pilih foto dari galeri
-      </span>
+    .app-inline-status[hidden] {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand-block">
+      <strong>PIM EI &amp; OT</strong>
+      <small>Asset Register &amp; Documentation</small>
     </div>
 
-    <img
-      id="assetPhotoPreview"
-      class="asset-photo-preview hidden"
-      alt="Preview foto aset"
-    >
-  </div>
+    <nav aria-label="Navigasi utama">
+      <button type="button" data-view="dashboard">Dashboard</button>
+      <button type="button" data-view="assets">Daftar Aset</button>
+      <button type="button" id="manageBtn" class="hidden" data-view="manage">Kelola</button>
+    </nav>
 
-  <div id="assetPhotoInfo"
-       class="asset-photo-info hidden">
-
-    <span id="assetPhotoFileName"></span>
-
-    <span id="assetPhotoFileSize"></span>
-  </div>
-
-  <div id="assetPhotoProgress"
-       class="asset-photo-progress hidden">
-
-    <div class="asset-photo-progress-track">
-      <div
-        id="assetPhotoProgressBar"
-        class="asset-photo-progress-bar">
-      </div>
+    <div id="userBox">
+      <span id="roleBadge">VIEWER</span>
+      <button type="button" id="loginBtn">Login</button>
+      <button type="button" id="logoutBtn" class="hidden">Logout</button>
     </div>
+  </header>
 
-    <span id="assetPhotoProgressText">
-      Menyiapkan foto...
-    </span>
+  <main>
+    <section id="dashboard" class="view">
+      <div class="hero">
+        <div>
+          <h1>Dashboard Dokumentasi Aset</h1>
+          <p>Informasi EI &amp; OT terpusat, interaktif, dan mengikuti data terbaru.</p>
+        </div>
+
+        <div class="search">
+          <input
+            id="globalSearch"
+            type="search"
+            autocomplete="off"
+            placeholder="Cari tagname, equipment, funloc, area..."
+            aria-label="Pencarian aset"
+          >
+          <button type="button" data-view="assets">Cari</button>
+        </div>
+      </div>
+
+      <div id="kpis" class="kpis"></div>
+
+      <div class="grid">
+        <article class="panel map-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Denah Area Pabrik</h2>
+              <p>Klik marker atau pilih area untuk membuka daftar aset.</p>
+            </div>
+
+            <select id="mapArea" aria-label="Pilih area pada denah">
+              <option value="">Pilih area...</option>
+            </select>
+          </div>
+
+          <div class="map">
+            <img
+              src="assets/denah-area-pabrik.png"
+              alt="Denah area pabrik"
+              loading="eager"
+            >
+            <div id="markers"></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <h2>Distribusi Area</h2>
+          <div id="areaChart" class="bars"></div>
+        </article>
+      </div>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Aset Terbaru atau Diperbarui</h2>
+          <button type="button" data-view="assets">Lihat Semua</button>
+        </div>
+        <div id="recent"></div>
+      </article>
+    </section>
+
+    <section id="assets" class="view hidden">
+      <div class="page-head">
+        <div>
+          <h1>Daftar Aset</h1>
+          <p id="assetCount">Memuat data aset...</p>
+        </div>
+
+        <div class="actions">
+          <button type="button" onclick="exportCSV()">Unduh CSV</button>
+          <button type="button" id="addBtn" class="primary hidden">+ Tambah Aset</button>
+        </div>
+      </div>
+
+      <div class="filters">
+        <input id="search" type="search" autocomplete="off" placeholder="Cari semua kolom">
+
+        <select id="areaFilter" aria-label="Filter area">
+          <option value="">Semua Area</option>
+        </select>
+
+        <select id="categoryFilter" aria-label="Filter kategori">
+          <option value="">Semua Category</option>
+        </select>
+
+        <select id="statusFilter" aria-label="Filter status">
+          <option value="">Semua Status</option>
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+          <option value="Repair">Repair</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Tagname</th>
+              <th>Functional Location</th>
+              <th>Equipment No.</th>
+              <th>Plant/Area</th>
+              <th>Area Mapping</th>
+              <th>Status</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="assetRows"></tbody>
+        </table>
+      </div>
+
+      <div id="pager" class="pager"></div>
+    </section>
+
+    <section id="manage" class="view hidden">
+      <div class="page-head">
+        <div>
+          <h1>Kelola Database</h1>
+          <p>Import memperbarui data yang sama dan menambahkan aset baru tanpa menghapus dokumentasi foto.</p>
+        </div>
+      </div>
+
+      <div class="manage-grid">
+        <article class="panel">
+          <h2>Import Excel</h2>
+          <p>
+            Pilih workbook asset register. Sinkronisasi menggunakan identitas aset stabil,
+            sedangkan UUID aset dan dokumentasi foto tetap dipertahankan.
+          </p>
+
+          <input id="excelFile" type="file" accept=".xlsx,.xls">
+          <button type="button" class="primary" onclick="importExcel()">Import &amp; Sinkronkan</button>
+          <div id="importStatus" aria-live="polite"></div>
+        </article>
+
+        <article class="panel" data-admin-only>
+          <h2>Laporan Email</h2>
+          <p>Kirim laporan aset dan dokumentasi foto secara manual. Laporan otomatis dijadwalkan setiap hari pukul 07.00 WIB.</p>
+
+          <label>
+            Email Penerima
+            <input id="reportRecipient" type="email" value="smartworkreport@gmail.com" placeholder="nama@perusahaan.com">
+          </label>
+
+          <div class="form-grid">
+            <label>Area
+              <select id="reportArea"><option value="">Semua Area</option></select>
+            </label>
+            <label>Functional Location
+              <select id="reportFunloc"><option value="">Semua Functional Location</option></select>
+            </label>
+            <label>Category
+              <select id="reportCategory"><option value="">Semua Category</option></select>
+            </label>
+          </div>
+
+          <button type="button" class="primary" onclick="sendManualReport()">Kirim Laporan Email</button>
+          <p id="emailStatus" aria-live="polite"></p>
+          <small>Jadwal otomatis: setiap hari pukul 07.00 WIB.</small>
+        </article>
+
+        <article class="panel">
+          <h2>Hak Akses</h2>
+          <ul>
+            <li><strong>Viewer:</strong> melihat dashboard, aset, foto, dan deskripsi.</li>
+            <li><strong>Technician:</strong> memperbarui kondisi, status, remark, dan dokumentasi foto.</li>
+            <li><strong>Administrator:</strong> mengelola master aset, import, penghapusan, dan seluruh dokumentasi.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <div id="loginModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+    <form id="loginForm" class="dialog">
+      <button type="button" class="close" onclick="closeModal('loginModal')" aria-label="Tutup">×</button>
+      <h2 id="loginTitle">Login Internal</h2>
+
+      <label>
+        Email
+        <input id="email" type="email" autocomplete="username" required>
+      </label>
+
+      <label>
+        Password
+        <input id="password" type="password" autocomplete="current-password" required>
+      </label>
+
+      <button class="primary" type="submit">Login</button>
+      <p id="loginError" class="error" aria-live="polite"></p>
+    </form>
   </div>
 
-  <p class="asset-photo-help">
-    Format JPG, PNG, atau WebP. Ukuran maksimal 5 MB.
-  </p>
-</div><label class="full">Remark<textarea id="fRemark"></textarea></label></div><div class="dialog-actions"><button type="button" onclick="closeModal('editModal')">Batal</button><button class="primary" type="submit">Simpan</button></div><p id="saveError" class="error"></p></form></div>
-<script src="config.js"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script src="app.js"></script></body></html>
+  <div id="editModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+    <form id="editForm" class="dialog wide">
+      <button type="button" class="close" onclick="closeModal('editModal')" aria-label="Tutup">×</button>
+      <h2 id="editTitle">Data Aset</h2>
+      <input id="assetId" type="hidden">
+
+      <div class="form-grid">
+        <label>
+          Category
+          <input id="fCategory" required>
+        </label>
+
+        <label>
+          Tagname
+          <input id="fTagname">
+        </label>
+
+        <label>
+          Functional Location
+          <input id="fFunloc">
+        </label>
+
+        <label>
+          Equipment No.
+          <input id="fEquipment">
+        </label>
+
+        <label>
+          Plant/Area
+          <input id="fPlant">
+        </label>
+
+        <label>
+          Area Mapping
+          <select id="fArea"></select>
+        </label>
+
+        <label>
+          Brand
+          <input id="fBrand">
+        </label>
+
+        <label>
+          Model
+          <input id="fModel">
+        </label>
+
+        <label>
+          Status
+          <select id="fStatus">
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Repair">Repair</option>
+          </select>
+        </label>
+
+        <label>
+          Condition
+          <select id="fCondition">
+            <option value="Good">Good</option>
+            <option value="Warning">Warning</option>
+            <option value="Bad">Bad</option>
+            <option value="Unknown">Unknown</option>
+          </select>
+        </label>
+
+        <label class="full">
+          Remark
+          <textarea id="fRemark" placeholder="Catatan kondisi, pemeriksaan, atau tindak lanjut"></textarea>
+        </label>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" onclick="closeModal('editModal')">Batal</button>
+        <button class="primary" type="submit">Simpan</button>
+      </div>
+
+      <p id="saveError" class="error" aria-live="polite"></p>
+    </form>
+  </div>
+
+  <div id="appStatus" class="app-inline-status" hidden aria-live="polite"></div>
+
+  <!-- Urutan wajib: config, Supabase, XLSX, lalu app.js. -->
+  <script src="config.js?v=20261008-email-final-1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="app.js?v=20261008-email-final-1"></script>
+
+  <!-- Hotfix tertanam: menghapus overlay lama dan mencegah overlay dibuat ulang. -->
+  <script>
+    (() => {
+      "use strict";
+
+      const removeBlockingOverlay = () => {
+        document.getElementById("appBusy")?.remove();
+        document.documentElement.style.overflow = "";
+        document.body.style.overflow = "";
+        document.body.style.cursor = "";
+        document.body.removeAttribute("aria-busy");
+
+        document
+          .querySelectorAll(".loading-overlay, .processing-overlay, .modal-backdrop")
+          .forEach((element) => {
+            const text = (element.textContent || "").trim().toLowerCase();
+            if (text.includes("memproses") || text.includes("loading")) {
+              element.remove();
+            }
+          });
+      };
+
+      removeBlockingOverlay();
+
+      const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          for (const node of mutation.addedNodes) {
+            if (!(node instanceof HTMLElement)) continue;
+
+            if (node.id === "appBusy") {
+              node.remove();
+              removeBlockingOverlay();
+              continue;
+            }
+
+            const nestedBusy = node.querySelector?.("#appBusy");
+            if (nestedBusy) {
+              nestedBusy.remove();
+              removeBlockingOverlay();
+            }
+          }
+        }
+      });
+
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true
+      });
+
+      window.addEventListener("load", removeBlockingOverlay);
+      window.addEventListener("pageshow", removeBlockingOverlay);
+      window.PIM_unlockPage = removeBlockingOverlay;
+    })();
+  </script>
+</body>
+</html>

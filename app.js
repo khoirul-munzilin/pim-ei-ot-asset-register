@@ -153,7 +153,7 @@ function classifyArea(functionalLocation = "", plantArea = "", tagname = "") {
   return rules.find(([, regex]) => regex.test(text))?.[0] || upper(plantArea) || "AREA BELUM DITENTUKAN";
 }
 
-function stableAssetId(asset) {
+function stableAssetUid(asset) {
   const source = upper([
     asset.category,
     asset.functional_location,
@@ -165,7 +165,7 @@ function stableAssetId(asset) {
     hash ^= source.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  return `a${(hash >>> 0).toString(16)}${btoa(unescape(encodeURIComponent(source))).replace(/\W/g, "").slice(0, 11)}`;
+  return `A-${(hash >>> 0).toString(16).toUpperCase()}-${btoa(unescape(encodeURIComponent(source))).replace(/\W/g, "").slice(0, 11)}`;
 }
 
 /* ======================== DATA LOADING ======================== */
@@ -202,10 +202,15 @@ async function loadAssets() {
     const online = await fetchAllRows("assets");
     state.assets = online.length ? online : await loadFallbackAssets();
     state.assets = state.assets.map((asset) => ({
-      status: "Active",
-      condition: "Unknown",
-      area_group: classifyArea(asset.functional_location, asset.plant_area, asset.tagname),
-      ...asset
+      ...asset,
+      equipment_no: asset.equipment_no || asset.equipment_number || "",
+      equipment_number: asset.equipment_number || asset.equipment_no || "",
+      remark: asset.remark || asset.remarks || "",
+      remarks: asset.remarks || asset.remark || "",
+      status: asset.status || "Active",
+      condition: asset.condition || "Unknown",
+      area_group: asset.area_group || asset.map_group || classifyArea(asset.functional_location, asset.plant_area, asset.tagname),
+      asset_uid: asset.asset_uid || stableAssetUid(asset)
     }));
     refreshAll();
   } catch (error) {
@@ -362,6 +367,7 @@ function getAssetFormData(existing = {}) {
     tagname: value("fTagname"),
     functional_location: value("fFunloc"),
     equipment_no: value("fEquipment"),
+    equipment_number: value("fEquipment"),
     plant_area: value("fPlant"),
     area_group: value("fArea") || classifyArea(value("fFunloc"), value("fPlant"), value("fTagname")),
     brand: value("fBrand"),
@@ -369,9 +375,11 @@ function getAssetFormData(existing = {}) {
     status: value("fStatus") || "Active",
     condition: value("fCondition") || "Unknown",
     remark: value("fRemark"),
+    remarks: value("fRemark"),
     updated_at: new Date().toISOString()
   };
-  asset.id = existing.id || stableAssetId(asset);
+  asset.asset_uid = existing.asset_uid || stableAssetUid(asset);
+  asset.id = existing.id || crypto.randomUUID();
   return asset;
 }
 
@@ -757,14 +765,27 @@ async function importExcel() {
         if (!read("tagname") && !read("functional_location") && !read("equipment_no")) continue;
         const candidate = {
           category: sheetName,
-          tagname: read("tagname"), functional_location: read("functional_location"), equipment_no: read("equipment_no"),
-          object_type: read("object_type"), plant_area: read("plant_area"), brand: read("brand"), model: read("model"), remark: read("remark"),
+          tagname: read("tagname"), functional_location: read("functional_location"), equipment_no: read("equipment_no"), equipment_number: read("equipment_no"),
+          object_type: read("object_type"), plant_area: read("plant_area"), brand: read("brand"), model: read("model"), remark: read("remark"), remarks: read("remark"),
           area_group: classifyArea(read("functional_location"), read("plant_area"), read("tagname")),
           status: "Active", condition: "Unknown", updated_at: new Date().toISOString()
         };
-        candidate.id = stableAssetId(candidate);
-        const old = state.assets.find((asset) => asset.id === candidate.id);
-        incoming.push({ ...candidate, status: old?.status || candidate.status, condition: old?.condition || candidate.condition, remark: candidate.remark || old?.remark || "" });
+        candidate.asset_uid = stableAssetUid(candidate);
+        const old = state.assets.find((asset) =>
+          asset.asset_uid === candidate.asset_uid ||
+          (asset.category === candidate.category &&
+           asset.functional_location === candidate.functional_location &&
+           (asset.equipment_no || asset.equipment_number || "") === candidate.equipment_no &&
+           asset.tagname === candidate.tagname)
+        );
+        candidate.id = old?.id || crypto.randomUUID();
+        incoming.push({
+          ...candidate,
+          status: old?.status || candidate.status,
+          condition: old?.condition || candidate.condition,
+          remark: candidate.remark || old?.remark || old?.remarks || "",
+          remarks: candidate.remark || old?.remarks || old?.remark || ""
+        });
       }
     }
     for (let index = 0; index < incoming.length; index += 500) {

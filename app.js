@@ -61,16 +61,30 @@ function notify(message, type = "info") {
 }
 
 function setBusy(active, message = "Memproses...") {
-  state.loading = active;
+  state.loading = Boolean(active);
   let overlay = $("appBusy");
+
   if (!overlay) {
     overlay = document.createElement("div");
     overlay.id = "appBusy";
-    overlay.style.cssText = "position:fixed;inset:0;z-index:9998;display:grid;place-items:center;background:#09241f88;color:#fff;font:700 16px Segoe UI,Arial";
+    overlay.setAttribute("role", "status");
+    overlay.setAttribute("aria-live", "polite");
+    overlay.style.cssText = [
+      "position:fixed",
+      "inset:0",
+      "z-index:9998",
+      "place-items:center",
+      "background:#09241f88",
+      "color:#fff",
+      "font:700 16px Segoe UI,Arial"
+    ].join(";");
     document.body.appendChild(overlay);
   }
+
   overlay.textContent = message;
-  overlay.hidden = !active;
+  overlay.style.display = active ? "grid" : "none";
+  overlay.setAttribute("aria-hidden", active ? "false" : "true");
+  document.body.style.overflow = active ? "hidden" : "";
 }
 
 /* ======================== ROLE & LOGIN ======================== */
@@ -849,6 +863,23 @@ function bindEvents() {
   qa(".modal").forEach((modal) => modal.addEventListener("click", (event) => { if (event.target === modal) closeModal(modal.id); }));
 }
 
+function clearStuckBusyOverlay() {
+  const overlay = $("appBusy");
+  if (overlay) overlay.style.display = "none";
+  document.body.style.overflow = "";
+  state.loading = false;
+}
+
+// Pengaman terakhir agar overlay tidak menutup aplikasi tanpa batas.
+window.addEventListener("pageshow", () => {
+  window.setTimeout(() => {
+    if (state.loading) {
+      clearStuckBusyOverlay();
+      notify("Pemuatan terlalu lama dihentikan. Data yang sudah tersedia tetap ditampilkan.", "error");
+    }
+  }, 20000);
+});
+
 async function initializeApp() {
   if (!supabaseClient) {
     notify("Konfigurasi Supabase tidak ditemukan. Periksa config.js.", "error");
@@ -875,5 +906,19 @@ window.deleteAsset = deleteAsset;
 window.importExcel = importExcel;
 window.exportCSV = exportCSV;
 
-if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initializeApp);
-else initializeApp();
+async function startApplicationSafely() {
+  try {
+    await initializeApp();
+  } catch (error) {
+    console.error("Initialization error:", error);
+    notify(`Aplikasi gagal dimuat: ${error.message}`, "error");
+  } finally {
+    setBusy(false);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", startApplicationSafely, { once: true });
+} else {
+  startApplicationSafely();
+}

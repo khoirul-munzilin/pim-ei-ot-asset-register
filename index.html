@@ -8,5 +8,116 @@
 <section id="manage" class="view hidden"><div class="page-head"><div><h1>Kelola Database</h1><p>Import memperbarui data berdasarkan identitas aset, bukan menambah duplikat.</p></div></div><div class="manage-grid"><article class="panel"><h2>Import Excel</h2><p>Pilih workbook asset register. Data lama yang cocok akan diperbarui, aset baru akan ditambahkan. Dokumentasi dan foto tetap dipertahankan.</p><input id="excelFile" type="file" accept=".xlsx,.xls"><button class="primary" onclick="importExcel()">Import & Sinkronkan</button><div id="importStatus"></div></article><article class="panel"><h2>Ringkasan Akses</h2><ul><li><b>Viewer:</b> hanya melihat dashboard dan aset.</li><li><b>Technician:</b> memperbarui kondisi, status, catatan, dan foto.</li><li><b>Administrator:</b> akses penuh termasuk tambah, hapus, dan import.</li></ul></article></div></section>
 </main>
 <div id="loginModal" class="modal hidden"><form id="loginForm" class="dialog"><button type="button" class="close" onclick="closeModal('loginModal')">×</button><h2>Login Internal</h2><label>Email<input id="email" type="email" required></label><label>Password<input id="password" type="password" required></label><button class="primary" type="submit">Login</button><p id="loginError" class="error"></p></form></div>
-<div id="editModal" class="modal hidden"><form id="editForm" class="dialog wide"><button type="button" class="close" onclick="closeModal('editModal')">×</button><h2 id="editTitle">Data Aset</h2><input id="assetId" type="hidden"><div class="form-grid"><label>Category<input id="fCategory" required></label><label>Tagname<input id="fTagname" required></label><label>Functional Location<input id="fFunloc"></label><label>Equipment No.<input id="fEquipment"></label><label>Plant/Area<input id="fPlant"></label><label>Area Mapping<select id="fArea"></select></label><label>Brand<input id="fBrand"></label><label>Model<input id="fModel"></label><label>Status<select id="fStatus"><option>Active</option><option>Inactive</option><option>Repair</option></select></label><label>Condition<select id="fCondition"><option>Good</option><option>Warning</option><option>Bad</option><option>Unknown</option></select></label><label class="full">URL Foto<input id="fPhoto" type="url" placeholder="https://..."></label><label class="full">Remark<textarea id="fRemark"></textarea></label></div><div class="dialog-actions"><button type="button" onclick="closeModal('editModal')">Batal</button><button class="primary" type="submit">Simpan</button></div><p id="saveError" class="error"></p></form></div>
+<div id="editModal" class="modal hidden"><form id="editForm" class="dialog wide"><button type="button" class="close" onclick="closeModal('editModal')">×</button><h2 id="editTitle">Data Aset</h2><input id="assetId" type="hidden"><div class="form-grid"><label>Category<input id="fCategory" required></label><label>Tagname<input id="fTagname" required></label><label>Functional Location<input id="fFunloc"></label><label>Equipment No.<input id="fEquipment"></label><label>Plant/Area<input id="fPlant"></label><label>Area Mapping<select id="fArea"></select></label><label>Brand<input id="fBrand"></label><label>Model<input id="fModel"></label><label>Status<select id="fStatus"><option>Active</option><option>Inactive</option><option>Repair</option></select></label><label>Condition<select id="fCondition"><option>Good</option><option>Warning</option><option>Bad</option><option>Unknown</option></select></label><div class="full asset-photo-section">
+  <label class="asset-photo-label">
+    Foto Aset
+  </label>
+
+  <!-- URL foto tetap disimpan di belakang layar -->
+  <input
+    id="fPhoto"
+    name="photo_url"
+    type="hidden"
+  >
+
+  <!-- Input khusus kamera HP -->
+  <input
+    id="assetCameraInput"
+    type="file"
+    accept="image/*"
+    capture="environment"
+    class="hidden"
+  >
+
+  <!-- Input galeri HP atau file komputer -->
+  <input
+    id="assetGalleryInput"
+    type="file"
+    accept="image/jpeg,image/png,image/webp"
+    class="hidden"
+  >
+
+  <div class="asset-photo-buttons">
+    <button
+      id="takeAssetPhotoBtn"
+      type="button"
+      class="asset-photo-button asset-camera-button"
+      onclick="openAssetCamera()"
+    >
+      <span class="asset-photo-button-icon">📷</span>
+      Ambil Foto
+    </button>
+
+    <button
+      id="chooseAssetPhotoBtn"
+      type="button"
+      class="asset-photo-button asset-gallery-button"
+      onclick="openAssetGallery()"
+    >
+      <span class="asset-photo-button-icon">🖼️</span>
+      Pilih Foto
+    </button>
+
+    <button
+      id="removeAssetPhotoBtn"
+      type="button"
+      class="asset-photo-button asset-remove-button hidden"
+      onclick="removeAssetPhoto()"
+    >
+      <span class="asset-photo-button-icon">🗑️</span>
+      Hapus Foto
+    </button>
+  </div>
+
+  <div id="assetPhotoPreviewContainer"
+       class="asset-photo-preview-container">
+
+    <div id="assetPhotoEmpty"
+         class="asset-photo-empty">
+
+      <div class="asset-photo-empty-icon">
+        📷
+      </div>
+
+      <strong>Belum ada foto aset</strong>
+
+      <span>
+        Ambil foto langsung atau pilih foto dari galeri
+      </span>
+    </div>
+
+    <img
+      id="assetPhotoPreview"
+      class="asset-photo-preview hidden"
+      alt="Preview foto aset"
+    >
+  </div>
+
+  <div id="assetPhotoInfo"
+       class="asset-photo-info hidden">
+
+    <span id="assetPhotoFileName"></span>
+
+    <span id="assetPhotoFileSize"></span>
+  </div>
+
+  <div id="assetPhotoProgress"
+       class="asset-photo-progress hidden">
+
+    <div class="asset-photo-progress-track">
+      <div
+        id="assetPhotoProgressBar"
+        class="asset-photo-progress-bar">
+      </div>
+    </div>
+
+    <span id="assetPhotoProgressText">
+      Menyiapkan foto...
+    </span>
+  </div>
+
+  <p class="asset-photo-help">
+    Format JPG, PNG, atau WebP. Ukuran maksimal 5 MB.
+  </p>
+</div><label class="full">Remark<textarea id="fRemark"></textarea></label></div><div class="dialog-actions"><button type="button" onclick="closeModal('editModal')">Batal</button><button class="primary" type="submit">Simpan</button></div><p id="saveError" class="error"></p></form></div>
 <script src="config.js"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script src="app.js"></script></body></html>

@@ -1,0 +1,2 @@
+[functions.trigger-asset-report]
+verify_jwt = false

@@ -25,3 +25,674 @@ async function deleteAsset(id){if(role!=='administrator'||!confirm('Hapus aset i
 function exportCSV(){const cols=['category','tagname','functional_location','equipment_no','object_type','plant_area','area_group','brand','model','condition','status','remark','photo_url'],q=v=>'"'+String(v??'').replace(/"/g,'""')+'"',csv='\ufeff'+[cols,...filtered().map(a=>cols.map(k=>a[k]))].map(r=>r.map(q).join(';')).join('\n'),blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='PIM-Asset-Register.csv';a.click();URL.revokeObjectURL(u)}
 async function importExcel(){if(role!=='administrator')return;const f=$('excelFile').files[0];if(!f)return $('importStatus').textContent='Pilih file Excel terlebih dahulu.';$('importStatus').textContent='Membaca dan menyinkronkan...';try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}),incoming=[];for(const name of wb.SheetNames){if(['SUMMARY','Equipments SAP','CC'].includes(name))continue;const rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:''}),hi=rows.findIndex(r=>r.some(v=>String(v).trim().toLowerCase()==='tagname'));if(hi<0)continue;const hs=rows[hi].map(v=>String(v).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()),idx=(...ks)=>{for(const k of ks){const i=hs.findIndex(h=>h.includes(k));if(i>=0)return i}return-1},ix={tag:idx('tagname'),fun:idx('function location','functional location'),eq:idx('equipment no'),obj:idx('object type'),plant:idx('plant area','plant location'),brand:idx('brand'),model:idx('model'),remark:idx('remark')};for(const r of rows.slice(hi+1)){const g=k=>ix[k]>=0?String(r[ix[k]]??'').trim():'';if(!g('tag')&&!g('fun')&&!g('eq'))continue;const a={category:name,tagname:g('tag'),functional_location:g('fun'),equipment_no:g('eq'),object_type:g('obj'),plant_area:g('plant'),area_group:classify(g('fun'),g('plant'),g('tag')),brand:g('brand'),model:g('model'),remark:g('remark'),status:'Active',condition:'Unknown',photo_url:'',updated_at:new Date().toISOString()};a.id=stableId(a);const old=assets.find(x=>x.id===a.id);incoming.push({...a,condition:old?.condition||a.condition,photo_url:old?.photo_url||'',status:old?.status||a.status,remark:a.remark||old?.remark||''})}}if(sb){for(let i=0;i<incoming.length;i+=500){const {error}=await sb.from('assets').upsert(incoming.slice(i,i+500));if(error)throw error}}const m=new Map(assets.map(a=>[a.id,a]));incoming.forEach(a=>m.set(a.id,a));assets=[...m.values()];fillFilters();renderAll();$('importStatus').textContent=`Selesai: ${incoming.length} baris diproses. Data dokumentasi lama tetap dipertahankan.`}catch(e){$('importStatus').textContent='Gagal: '+e.message}}
 init().catch(e=>{console.error(e);alert('Aplikasi gagal dimuat: '+e.message)});
+/* =====================================================
+   UPLOAD FOTO ASET KE SUPABASE STORAGE
+   ===================================================== */
+
+const ASSET_PHOTO_BUCKET = "asset-photos";
+const MAX_ASSET_PHOTO_SIZE = 5 * 1024 * 1024;
+
+let selectedAssetPhotoFile = null;
+let selectedAssetPhotoPreviewUrl = "";
+let existingAssetPhotoUrl = "";
+let removeExistingAssetPhoto = false;
+
+
+/* =====================================================
+   MEMBUKA KAMERA
+   ===================================================== */
+
+function openAssetCamera() {
+  if (!canCurrentUserUploadAssetPhoto()) {
+    alert(
+      "Silakan login sebagai Technician atau Administrator."
+    );
+    return;
+  }
+
+  const input =
+    document.getElementById("assetCameraInput");
+
+  if (!input) {
+    alert("Input kamera tidak ditemukan.");
+    return;
+  }
+
+  input.value = "";
+  input.click();
+}
+
+
+/* =====================================================
+   MEMBUKA GALERI ATAU FILE KOMPUTER
+   ===================================================== */
+
+function openAssetGallery() {
+  if (!canCurrentUserUploadAssetPhoto()) {
+    alert(
+      "Silakan login sebagai Technician atau Administrator."
+    );
+    return;
+  }
+
+  const input =
+    document.getElementById("assetGalleryInput");
+
+  if (!input) {
+    alert("Input galeri tidak ditemukan.");
+    return;
+  }
+
+  input.value = "";
+  input.click();
+}
+
+
+/* =====================================================
+   PEMERIKSAAN HAK AKSES
+   ===================================================== */
+
+function canCurrentUserUploadAssetPhoto() {
+  if (typeof role !== "undefined") {
+    return (
+      role === "technician" ||
+      role === "administrator" ||
+      role === "admin"
+    );
+  }
+
+  /*
+   * Jika aplikasi versi lama belum memiliki variabel role,
+   * pengguna yang sudah login tetap diperbolehkan upload.
+   */
+  if (typeof user !== "undefined") {
+    return Boolean(user);
+  }
+
+  return true;
+}
+
+
+/* =====================================================
+   VALIDASI FOTO
+   ===================================================== */
+
+function validateAssetPhoto(file) {
+  if (!file) {
+    throw new Error("Foto belum dipilih.");
+  }
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp"
+  ];
+
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error(
+      "Format foto tidak didukung. Gunakan JPG, PNG, atau WebP."
+    );
+  }
+
+  if (file.size > MAX_ASSET_PHOTO_SIZE) {
+    throw new Error(
+      "Ukuran foto terlalu besar. Maksimal 5 MB."
+    );
+  }
+
+  return true;
+}
+
+
+/* =====================================================
+   SAAT FOTO DIPILIH
+   ===================================================== */
+
+function handleAssetPhotoSelection(event) {
+  const file = event.target.files?.[0];
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    validateAssetPhoto(file);
+
+    clearTemporaryAssetPhotoPreview();
+
+    selectedAssetPhotoFile = file;
+    removeExistingAssetPhoto = false;
+
+    selectedAssetPhotoPreviewUrl =
+      URL.createObjectURL(file);
+
+    showAssetPhotoPreview(
+      selectedAssetPhotoPreviewUrl
+    );
+
+    showAssetPhotoInformation(file);
+
+    setAssetPhotoProgress(
+      0,
+      "Foto siap diunggah saat tombol Simpan ditekan."
+    );
+  } catch (error) {
+    selectedAssetPhotoFile = null;
+    event.target.value = "";
+
+    alert(error.message);
+  }
+}
+
+
+/* =====================================================
+   MENAMPILKAN PREVIEW
+   ===================================================== */
+
+function showAssetPhotoPreview(photoUrl) {
+  const preview =
+    document.getElementById("assetPhotoPreview");
+
+  const empty =
+    document.getElementById("assetPhotoEmpty");
+
+  const removeButton =
+    document.getElementById("removeAssetPhotoBtn");
+
+  if (!preview || !empty) {
+    return;
+  }
+
+  if (photoUrl) {
+    preview.src = photoUrl;
+
+    preview.classList.remove("hidden");
+    empty.classList.add("hidden");
+
+    if (removeButton) {
+      removeButton.classList.remove("hidden");
+    }
+  } else {
+    preview.removeAttribute("src");
+
+    preview.classList.add("hidden");
+    empty.classList.remove("hidden");
+
+    if (removeButton) {
+      removeButton.classList.add("hidden");
+    }
+  }
+}
+
+
+/* =====================================================
+   INFORMASI FILE
+   ===================================================== */
+
+function showAssetPhotoInformation(file) {
+  const info =
+    document.getElementById("assetPhotoInfo");
+
+  const fileName =
+    document.getElementById("assetPhotoFileName");
+
+  const fileSize =
+    document.getElementById("assetPhotoFileSize");
+
+  if (!info || !fileName || !fileSize) {
+    return;
+  }
+
+  if (!file) {
+    info.classList.add("hidden");
+    fileName.textContent = "";
+    fileSize.textContent = "";
+    return;
+  }
+
+  fileName.textContent = file.name;
+  fileSize.textContent = formatAssetPhotoSize(
+    file.size
+  );
+
+  info.classList.remove("hidden");
+}
+
+
+function formatAssetPhotoSize(bytes) {
+  if (!bytes) {
+    return "0 KB";
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(
+    bytes /
+    1024 /
+    1024
+  ).toFixed(1)} MB`;
+}
+
+
+/* =====================================================
+   HAPUS FOTO DARI FORM
+   ===================================================== */
+
+function removeAssetPhoto() {
+  const hasPhoto =
+    selectedAssetPhotoFile ||
+    existingAssetPhotoUrl ||
+    document.getElementById("fPhoto")?.value;
+
+  if (!hasPhoto) {
+    return;
+  }
+
+  const confirmation = confirm(
+    "Hapus foto dari data aset ini?"
+  );
+
+  if (!confirmation) {
+    return;
+  }
+
+  clearTemporaryAssetPhotoPreview();
+
+  selectedAssetPhotoFile = null;
+  existingAssetPhotoUrl = "";
+  removeExistingAssetPhoto = true;
+
+  const photoUrlInput =
+    document.getElementById("fPhoto");
+
+  const cameraInput =
+    document.getElementById("assetCameraInput");
+
+  const galleryInput =
+    document.getElementById("assetGalleryInput");
+
+  if (photoUrlInput) {
+    photoUrlInput.value = "";
+  }
+
+  if (cameraInput) {
+    cameraInput.value = "";
+  }
+
+  if (galleryInput) {
+    galleryInput.value = "";
+  }
+
+  showAssetPhotoPreview("");
+  showAssetPhotoInformation(null);
+  hideAssetPhotoProgress();
+}
+
+
+/* =====================================================
+   MEMBERSIHKAN PREVIEW SEMENTARA
+   ===================================================== */
+
+function clearTemporaryAssetPhotoPreview() {
+  if (
+    selectedAssetPhotoPreviewUrl &&
+    selectedAssetPhotoPreviewUrl.startsWith("blob:")
+  ) {
+    URL.revokeObjectURL(
+      selectedAssetPhotoPreviewUrl
+    );
+  }
+
+  selectedAssetPhotoPreviewUrl = "";
+}
+
+
+/* =====================================================
+   PROGRESS UPLOAD
+   ===================================================== */
+
+function setAssetPhotoProgress(percent, text) {
+  const container =
+    document.getElementById("assetPhotoProgress");
+
+  const progressBar =
+    document.getElementById("assetPhotoProgressBar");
+
+  const progressText =
+    document.getElementById("assetPhotoProgressText");
+
+  if (!container || !progressBar || !progressText) {
+    return;
+  }
+
+  container.classList.remove("hidden");
+
+  progressBar.style.width =
+    `${Math.max(0, Math.min(100, percent))}%`;
+
+  progressText.textContent = text;
+}
+
+
+function hideAssetPhotoProgress() {
+  const container =
+    document.getElementById("assetPhotoProgress");
+
+  const progressBar =
+    document.getElementById("assetPhotoProgressBar");
+
+  if (container) {
+    container.classList.add("hidden");
+  }
+
+  if (progressBar) {
+    progressBar.style.width = "0%";
+  }
+}
+
+
+/* =====================================================
+   NAMA FILE AMAN
+   ===================================================== */
+
+function createSafeAssetPhotoFileName(file) {
+  const extension =
+    file.name
+      .split(".")
+      .pop()
+      ?.toLowerCase() || "jpg";
+
+  const randomId =
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}`;
+
+  return `${Date.now()}-${randomId}.${extension}`;
+}
+
+
+/* =====================================================
+   ID FOLDER FOTO
+   ===================================================== */
+
+function createSafeAssetPhotoFolder(assetId) {
+  const value =
+    String(assetId || "new-asset")
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]/g, "-");
+
+  return value || "new-asset";
+}
+
+
+/* =====================================================
+   UPLOAD FOTO KE SUPABASE
+   ===================================================== */
+
+async function uploadSelectedAssetPhoto(assetId) {
+  const hiddenInput =
+    document.getElementById("fPhoto");
+
+  /*
+   * Jika pengguna menghapus foto dari form,
+   * kosongkan photo_url.
+   */
+  if (removeExistingAssetPhoto) {
+    return "";
+  }
+
+  /*
+   * Jika tidak ada foto baru, pertahankan URL lama.
+   */
+  if (!selectedAssetPhotoFile) {
+    return (
+      existingAssetPhotoUrl ||
+      hiddenInput?.value ||
+      ""
+    );
+  }
+
+  if (
+    typeof sb === "undefined" ||
+    !sb
+  ) {
+    throw new Error(
+      "Koneksi Supabase tidak tersedia."
+    );
+  }
+
+  validateAssetPhoto(
+    selectedAssetPhotoFile
+  );
+
+  setAssetPhotoProgress(
+    15,
+    "Menyiapkan foto..."
+  );
+
+  const folder =
+    createSafeAssetPhotoFolder(assetId);
+
+  const fileName =
+    createSafeAssetPhotoFileName(
+      selectedAssetPhotoFile
+    );
+
+  const filePath =
+    `${folder}/${fileName}`;
+
+  setAssetPhotoProgress(
+    45,
+    "Mengunggah foto..."
+  );
+
+  const {
+    error: uploadError
+  } = await sb.storage
+    .from(ASSET_PHOTO_BUCKET)
+    .upload(
+      filePath,
+      selectedAssetPhotoFile,
+      {
+        cacheControl: "3600",
+        upsert: false,
+        contentType:
+          selectedAssetPhotoFile.type
+      }
+    );
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  setAssetPhotoProgress(
+    80,
+    "Membuat URL foto..."
+  );
+
+  const {
+    data: publicUrlData
+  } = sb.storage
+    .from(ASSET_PHOTO_BUCKET)
+    .getPublicUrl(filePath);
+
+  const publicUrl =
+    publicUrlData?.publicUrl || "";
+
+  if (!publicUrl) {
+    throw new Error(
+      "URL publik foto tidak berhasil dibuat."
+    );
+  }
+
+  if (hiddenInput) {
+    hiddenInput.value = publicUrl;
+  }
+
+  existingAssetPhotoUrl = publicUrl;
+  selectedAssetPhotoFile = null;
+  removeExistingAssetPhoto = false;
+
+  clearTemporaryAssetPhotoPreview();
+  showAssetPhotoPreview(publicUrl);
+
+  setAssetPhotoProgress(
+    100,
+    "Foto berhasil diunggah."
+  );
+
+  return publicUrl;
+}
+
+
+/* =====================================================
+   MENYIAPKAN FOTO SAAT MODAL EDIT DIBUKA
+   ===================================================== */
+
+function prepareAssetPhotoEditor(
+  photoUrl = "",
+  readonly = false
+) {
+  clearTemporaryAssetPhotoPreview();
+
+  selectedAssetPhotoFile = null;
+  existingAssetPhotoUrl = photoUrl || "";
+  removeExistingAssetPhoto = false;
+
+  const hiddenInput =
+    document.getElementById("fPhoto");
+
+  const cameraInput =
+    document.getElementById("assetCameraInput");
+
+  const galleryInput =
+    document.getElementById("assetGalleryInput");
+
+  if (hiddenInput) {
+    hiddenInput.value =
+      existingAssetPhotoUrl;
+  }
+
+  if (cameraInput) {
+    cameraInput.value = "";
+  }
+
+  if (galleryInput) {
+    galleryInput.value = "";
+  }
+
+  showAssetPhotoPreview(
+    existingAssetPhotoUrl
+  );
+
+  showAssetPhotoInformation(null);
+  hideAssetPhotoProgress();
+
+  updateAssetPhotoAccess(readonly);
+}
+
+
+/* =====================================================
+   AKSES TOMBOL FOTO
+   ===================================================== */
+
+function updateAssetPhotoAccess(
+  readonly = false
+) {
+  const cameraButton =
+    document.getElementById(
+      "takeAssetPhotoBtn"
+    );
+
+  const galleryButton =
+    document.getElementById(
+      "chooseAssetPhotoBtn"
+    );
+
+  const removeButton =
+    document.getElementById(
+      "removeAssetPhotoBtn"
+    );
+
+  const mayUpload =
+    canCurrentUserUploadAssetPhoto();
+
+  const disabled =
+    readonly || !mayUpload;
+
+  if (cameraButton) {
+    cameraButton.disabled = disabled;
+  }
+
+  if (galleryButton) {
+    galleryButton.disabled = disabled;
+  }
+
+  if (removeButton) {
+    removeButton.disabled = disabled;
+  }
+}
+
+
+/* =====================================================
+   EVENT INPUT FOTO
+   ===================================================== */
+
+function initializeAssetPhotoUpload() {
+  const cameraInput =
+    document.getElementById(
+      "assetCameraInput"
+    );
+
+  const galleryInput =
+    document.getElementById(
+      "assetGalleryInput"
+    );
+
+  if (
+    cameraInput &&
+    !cameraInput.dataset.listenerReady
+  ) {
+    cameraInput.addEventListener(
+      "change",
+      handleAssetPhotoSelection
+    );
+
+    cameraInput.dataset.listenerReady =
+      "true";
+  }
+
+  if (
+    galleryInput &&
+    !galleryInput.dataset.listenerReady
+  ) {
+    galleryInput.addEventListener(
+      "change",
+      handleAssetPhotoSelection
+    );
+
+    galleryInput.dataset.listenerReady =
+      "true";
+  }
+}
+
+
+/*
+ * Jalankan setelah halaman selesai dibuka.
+ */
+
+if (
+  document.readyState === "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    initializeAssetPhotoUpload
+  );
+} else {
+  initializeAssetPhotoUpload();
+}

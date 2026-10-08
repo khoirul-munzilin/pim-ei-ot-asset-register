@@ -1,0 +1,12 @@
+UPLOAD FILE:
+1. interactive-dashboard.js ke root repository.
+2. interactive-ui.css ke root repository.
+
+TAMBAHKAN DI index.html:
+- Setelah style.css:
+  <link rel="stylesheet" href="interactive-ui.css?v=20261008-1">
+- Tepat sebelum </body>, setelah app.js:
+  <script src="interactive-dashboard.js?v=20261008-1"></script>
+
+Fitur: dark mode, Ctrl+K, animated KPI, clickable KPI filters, fullscreen/zoom map,
+area insight panel, active navigation, scroll progress, back-to-top, mobile controls.

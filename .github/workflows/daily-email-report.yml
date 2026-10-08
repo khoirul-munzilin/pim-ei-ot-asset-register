@@ -1,76 +1,810 @@
-name: Daily and Manual Asset Email Report
+import nodemailer from "nodemailer";
 
-on:
-  schedule:
-    # GitHub Actions menggunakan UTC.
-    # 00:00 UTC sama dengan 07:00 WIB.
-    - cron: '0 0 * * *'
+/* ============================================================
+   PEMERIKSAAN ENVIRONMENT VARIABLES
+   ============================================================ */
 
-  workflow_dispatch:
-    inputs:
+const requiredSecrets = [
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "SMTP_USER",
+  "SMTP_PASS"
+];
+
+for (const secretName of requiredSecrets) {
+  if (!process.env[secretName]) {
+    throw new Error(
+      `Secret ${secretName} belum tersedia di GitHub Actions`
+    );
+  }
+}
+
+
+/* ============================================================
+   KONFIGURASI
+   ============================================================ */
+
+const SUPABASE_URL =
+  process.env.SUPABASE_URL;
+
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const SMTP_USER =
+  process.env.SMTP_USER;
+
+const SMTP_PASS =
+  process.env.SMTP_PASS;
+
+const EMAIL_FROM_NAME =
+  process.env.EMAIL_FROM_NAME ||
+  "PIM EI & OT Asset Report";
+
+const REPORT_RECIPIENT =
+  process.env.REPORT_RECIPIENT ||
+  process.env.REPORT_TO ||
+  SMTP_USER;
+
+const REPORT_FILTERS = {
+  area_group:
+    process.env.REPORT_AREA || "",
+
+  functional_location:
+    process.env.REPORT_FUNLOC || "",
+
+  category:
+    process.env.REPORT_CATEGORY || ""
+};
+
+
+/* ============================================================
+   FUNGSI DOWNLOAD DATA SUPABASE
+   ============================================================ */
+
+async function fetchAllRows(
+  tableName,
+  filters = {}
+) {
+  const allRows = [];
+  let offset = 0;
+  const limit = 1000;
+
+  while (true) {
+    const params = new URLSearchParams({
+      select: "*",
+      offset: String(offset),
+      limit: String(limit)
+    });
+
+    for (const [column, filterValue] of
+      Object.entries(filters)) {
+
+      if (filterValue) {
+        params.set(
+          column,
+          `eq.${filterValue}`
+        );
+      }
+    }
+
+    const url =
+      `${SUPABASE_URL}/rest/v1/` +
+      `${tableName}?${params.toString()}`;
+
+    const response = await fetch(url, {
+      headers: {
+        apikey:
+          SUPABASE_SERVICE_ROLE_KEY,
+
+        Authorization:
+          `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText =
+        await response.text();
+
+      throw new Error(
+        `Gagal membaca tabel ${tableName}: ` +
+        `${response.status} ${errorText}`
+      );
+    }
+
+    const rows =
+      await response.json();
+
+    allRows.push(...rows);
+
+    if (rows.length < limit) {
+      break;
+    }
+
+    offset += limit;
+  }
+
+  return allRows;
+}
+
+
+/* ============================================================
+   FORMAT DATA
+   ============================================================ */
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(
+      /[&<>"']/g,
+      (character) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      })[character]
+    );
+}
+
+
+function csvCell(value) {
+  return (
+    "\"" +
+    String(value ?? "")
+      .replace(/"/g, "\"\"") +
+    "\""
+  );
+}
+
+
+function formatDateJakarta(date) {
+  return new Intl.DateTimeFormat(
+    "id-ID",
+    {
+      timeZone: "Asia/Jakarta",
+      dateStyle: "full",
+      timeStyle: "short"
+    }
+  ).format(date);
+}
+
+
+function formatShortDateJakarta(date) {
+  return new Intl.DateTimeFormat(
+    "id-ID",
+    {
+      timeZone: "Asia/Jakarta",
+      dateStyle: "medium"
+    }
+  ).format(date);
+}
+
+
+/* ============================================================
+   AMBIL DATA ASSET DAN FOTO
+   ============================================================ */
+
+console.log(
+  "Membaca data aset dari Supabase..."
+);
+
+const assets = await fetchAllRows(
+  "assets",
+  REPORT_FILTERS
+);
+
+console.log(
+  `${assets.length} aset ditemukan`
+);
+
+
+let allPhotos = [];
+
+try {
+  allPhotos = await fetchAllRows(
+    "asset_photos",
+    {
+      is_active: "true"
+    }
+  );
+} catch (error) {
+  console.warn(
+    "Foto tidak dapat dibaca:",
+    error.message
+  );
+
+  allPhotos = [];
+}
+
+
+const assetIds = new Set(
+  assets.map((asset) => asset.id)
+);
+
+const photos = allPhotos.filter(
+  (photo) =>
+    assetIds.has(photo.asset_id)
+);
+
+
+/* ============================================================
+   KELOMPOKKAN FOTO BERDASARKAN ASSET
+   ============================================================ */
+
+const photosByAsset = new Map();
+
+for (const photo of photos) {
+  const existingPhotos =
+    photosByAsset.get(
+      photo.asset_id
+    ) || [];
+
+  existingPhotos.push(photo);
+
+  photosByAsset.set(
+    photo.asset_id,
+    existingPhotos
+  );
+}
+
+
+/* ============================================================
+   KELOMPOKKAN ASSET BERDASARKAN FUNCTIONAL LOCATION
+   ============================================================ */
+
+const assetsByFunctionalLocation =
+  new Map();
+
+for (const asset of assets) {
+  const functionalLocation =
+    asset.functional_location ||
+    "FUNCTIONAL LOCATION BELUM DITENTUKAN";
+
+  const existingAssets =
+    assetsByFunctionalLocation.get(
+      functionalLocation
+    ) || [];
+
+  existingAssets.push(asset);
+
+  assetsByFunctionalLocation.set(
+    functionalLocation,
+    existingAssets
+  );
+}
+
+
+/* ============================================================
+   BUAT ISI HTML EMAIL
+   ============================================================ */
+
+const now = new Date();
+
+let emailHtml = `
+  <div
+    style="
+      max-width:1100px;
+      margin:auto;
+      font-family:Arial,Helvetica,sans-serif;
+      color:#17342d;
+    "
+  >
+    <div
+      style="
+        padding:20px;
+        border-radius:12px;
+        background:#164f41;
+        color:#ffffff;
+      "
+    >
+      <h1 style="margin:0 0 8px;">
+        PIM EI &amp; OT Asset Documentation Report
+      </h1>
+
+      <p style="margin:0;">
+        Laporan aset dan dokumentasi foto
+      </p>
+    </div>
+
+    <div
+      style="
+        margin-top:16px;
+        padding:15px;
+        border:1px solid #d8e5e1;
+        border-radius:10px;
+        background:#f4f8f7;
+      "
+    >
+      <p>
+        <strong>Tanggal:</strong>
+        ${escapeHtml(formatDateJakarta(now))}
+      </p>
+
+      <p>
+        <strong>Total aset:</strong>
+        ${assets.length}
+      </p>
+
+      <p>
+        <strong>Total foto:</strong>
+        ${photos.length}
+      </p>
+
+      <p>
+        <strong>Filter area:</strong>
+        ${escapeHtml(
+          REPORT_FILTERS.area_group ||
+          "Semua Area"
+        )}
+      </p>
+
+      <p>
+        <strong>Filter Functional Location:</strong>
+        ${escapeHtml(
+          REPORT_FILTERS.functional_location ||
+          "Semua Functional Location"
+        )}
+      </p>
+
+      <p>
+        <strong>Filter category:</strong>
+        ${escapeHtml(
+          REPORT_FILTERS.category ||
+          "Semua Category"
+        )}
+      </p>
+    </div>
+`;
+
+
+/* ============================================================
+   ISI REPORT PER FUNCTIONAL LOCATION
+   ============================================================ */
+
+for (
+  const [
+    functionalLocation,
+    functionalLocationAssets
+  ]
+  of assetsByFunctionalLocation
+) {
+  emailHtml += `
+    <div style="margin-top:24px;">
+      <h2
+        style="
+          margin:0 0 12px;
+          padding:12px 14px;
+          border-radius:8px;
+          background:#174f72;
+          color:#ffffff;
+          font-size:18px;
+        "
+      >
+        ${escapeHtml(functionalLocation)}
+      </h2>
+  `;
+
+  for (
+    const asset
+    of functionalLocationAssets
+  ) {
+    const assetPhotos =
+      photosByAsset.get(
+        asset.id
+      ) || [];
+
+    const equipmentNumber =
+      asset.equipment_no ||
+      asset.equipment_number ||
+      "-";
+
+    const remark =
+      asset.remark ||
+      asset.remarks ||
+      "-";
+
+    emailHtml += `
+      <div
+        style="
+          margin:12px 0;
+          padding:14px;
+          border:1px solid #d7e5e1;
+          border-radius:10px;
+          background:#ffffff;
+        "
+      >
+        <h3
+          style="
+            margin:0 0 10px;
+            color:#174f41;
+          "
+        >
+          ${escapeHtml(
+            asset.tagname ||
+            "Tanpa Tagname"
+          )}
+        </h3>
+
+        <table
+          style="
+            width:100%;
+            border-collapse:collapse;
+            font-size:13px;
+          "
+        >
+          <tr>
+            <td
+              style="
+                width:160px;
+                padding:5px;
+                font-weight:bold;
+              "
+            >
+              Category
+            </td>
+
+            <td style="padding:5px;">
+              ${escapeHtml(
+                asset.category || "-"
+              )}
+            </td>
+          </tr>
+
+          <tr>
+            <td
+              style="
+                padding:5px;
+                font-weight:bold;
+              "
+            >
+              Equipment Number
+            </td>
+
+            <td style="padding:5px;">
+              ${escapeHtml(
+                equipmentNumber
+              )}
+            </td>
+          </tr>
+
+          <tr>
+            <td
+              style="
+                padding:5px;
+                font-weight:bold;
+              "
+            >
+              Plant/Area
+            </td>
+
+            <td style="padding:5px;">
+              ${escapeHtml(
+                asset.plant_area || "-"
+              )}
+            </td>
+          </tr>
+
+          <tr>
+            <td
+              style="
+                padding:5px;
+                font-weight:bold;
+              "
+            >
+              Area Mapping
+            </td>
+
+            <td style="padding:5px;">
+              ${escapeHtml(
+                asset.area_group || "-"
+              )}
+            </td>
+          </tr>
+
+          <tr>
+            <td
+              style="
+                padding:5px;
+                font-weight:bold;
+              "
+            >
+              Condition
+            </td>
+
+            <td style="padding:5px;">
+              ${escapeHtml(
+                asset.condition ||
+                "Unknown"
+              )}
+            </td>
+          </tr>
+
+          <tr>
+            <td
+              style="
+                padding:5px;
+                font-weight:bold;
+              "
+            >
+              Status
+            </td>
+
+            <td style="padding:5px;">
+              ${escapeHtml(
+                asset.status ||
+                "Active"
+              )}
+            </td>
+          </tr>
+
+          <tr>
+            <td
+              style="
+                padding:5px;
+                font-weight:bold;
+              "
+            >
+              Remark
+            </td>
+
+            <td style="padding:5px;">
+              ${escapeHtml(remark)}
+            </td>
+          </tr>
+        </table>
+    `;
+
+    if (!assetPhotos.length) {
+      emailHtml += `
+        <div
+          style="
+            margin-top:12px;
+            padding:20px;
+            border:2px dashed #cad8d4;
+            border-radius:8px;
+            text-align:center;
+            color:#74847f;
+            background:#f8faf9;
+          "
+        >
+          Foto belum tersedia.
+        </div>
+      `;
+    } else {
+      emailHtml += `
+        <div
+          style="
+            margin-top:14px;
+          "
+        >
+      `;
+
+      for (
+        const photo
+        of assetPhotos.slice(0, 6)
+      ) {
+        emailHtml += `
+          <div
+            style="
+              display:inline-block;
+              width:280px;
+              margin:6px;
+              vertical-align:top;
+              overflow:hidden;
+              border:1px solid #d8e3e0;
+              border-radius:9px;
+              background:#ffffff;
+            "
+          >
+            ${escapeHtml(
+                photo.photo_url
+              )}
+
+            <div style="padding:10px;">
+              <strong>
+                ${escapeHtml(
+                  photo.photo_type ||
+                  "Asset Photo"
+                )}
+              </strong>
+
+              <p
+                style="
+                  margin:7px 0;
+                  font-size:13px;
+                  line-height:1.4;
+                "
+              >
+                ${escapeHtml(
+                  photo.description ||
+                  "Tanpa deskripsi"
+                )}
+              </p>
+
+              <small>
+                Condition:
+                ${escapeHtml(
+                  photo.condition ||
+                  "Unknown"
+                )}
+              </small>
+            </div>
+          </div>
+        `;
+      }
+
+      emailHtml += `
+        </div>
+      `;
+    }
+
+    emailHtml += `
+      </div>
+    `;
+  }
+
+  emailHtml += `
+    </div>
+  `;
+}
+
+
+emailHtml += `
+    <div
+      style="
+        margin-top:25px;
+        padding:14px;
+        border-radius:8px;
+        background:#edf5f2;
+        color:#62756f;
+        font-size:12px;
+      "
+    >
+      Laporan dibuat otomatis oleh
+      PIM EI &amp; OT Asset Register.
+    </div>
+  </div>
+`;
+
+
+/* ============================================================
+   BUAT LAMPIRAN CSV
+   ============================================================ */
+
+const csvColumns = [
+  "category",
+  "tagname",
+  "functional_location",
+  "equipment_no",
+  "plant_area",
+  "area_group",
+  "brand",
+  "model",
+  "condition",
+  "status",
+  "remark"
+];
+
+const csvRows = [
+  csvColumns.map(csvCell).join(";")
+];
+
+for (const asset of assets) {
+  const row = csvColumns.map(
+    (columnName) => {
+      let cellValue =
+        asset[columnName];
+
+      if (
+        columnName ===
+        "equipment_no"
+      ) {
+        cellValue =
+          asset.equipment_no ||
+          asset.equipment_number ||
+          "";
+      }
+
+      if (
+        columnName ===
+        "remark"
+      ) {
+        cellValue =
+          asset.remark ||
+          asset.remarks ||
+          "";
+      }
+
+      return csvCell(cellValue);
+    }
+  );
+
+  csvRows.push(
+    row.join(";")
+  );
+}
+
+const csvText =
+  "\ufeff" +
+  csvRows.join("\n");
+
+
+/* ============================================================
+   KONFIGURASI GMAIL
+   ============================================================ */
+
+const transporter =
+  nodemailer.createTransport({
+    service: "gmail",
+
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS
+    }
+  });
+
+
+/* ============================================================
+   KIRIM EMAIL
+   ============================================================ */
+
+console.log(
+  `Mengirim report ke ${REPORT_RECIPIENT}...`
+);
+
+const emailInformation =
+  await transporter.sendMail({
+    from:
+      `${EMAIL_FROM_NAME} ` +
+      `<${SMTP_USER}>`,
+
+    to:
+      REPORT_RECIPIENT,
+
+    subject:
+      `PIM EI & OT Asset Report - ` +
+      formatShortDateJakarta(now),
+
+    html:
+      emailHtml,
+
+    attachments: [
+      {
+        filename:
+          `PIM-Asset-Report-` +
+          `${now
+            .toISOString()
+            .slice(0, 10)}.csv`,
+
+        content:
+          csvText,
+
+        contentType:
+          "text/csv; charset=utf-8"
+      }
+    ]
+  });
+
+
+/* ============================================================
+   HASIL
+   ============================================================ */
+
+console.log(
+  JSON.stringify(
+    {
+      ok: true,
+      messageId:
+        emailInformation.messageId,
       recipient:
-        description: 'Email penerima, kosongkan untuk memakai REPORT_TO'
-        required: false
-        type: string
-
-      area_group:
-        description: 'Filter Area, opsional'
-        required: false
-        type: string
-
-      functional_location:
-        description: 'Filter Functional Location, opsional'
-        required: false
-        type: string
-
-      category:
-        description: 'Filter Category, opsional'
-        required: false
-        type: string
-
-  repository_dispatch:
-    types:
-      - manual-asset-report
-
-concurrency:
-  group: asset-email-report
-  cancel-in-progress: false
-
-permissions:
-  contents: read
-
-jobs:
-  send-report:
-    name: Generate and send asset report
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci --omit=dev
-
-      - name: Generate and send report
-        run: npm run report
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          EMAIL_FROM_NAME: ${{ secrets.EMAIL_FROM_NAME }}
-
-          REPORT_TO: ${{ secrets.REPORT_TO }}
-
-          REPORT_RECIPIENT: ${{ github.event.client_payload.recipient || inputs.recipient || secrets.REPORT_TO }}
-          REPORT_AREA: ${{ github.event.client_payload.area_group || inputs.area_group || '' }}
-          REPORT_FUNLOC: ${{ github.event.client_payload.functional_location || inputs.functional_location || '' }}
-          REPORT_CATEGORY: ${{ github.event.client_payload.category || inputs.category || '' }}
+        REPORT_RECIPIENT,
+      assets:
+        assets.length,
+      photos:
+        photos.length,
+      generatedAt:
+        now.toISOString()
+    },
+    null,
+    2
+  )
+);

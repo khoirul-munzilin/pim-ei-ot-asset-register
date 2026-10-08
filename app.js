@@ -806,16 +806,35 @@ async function importExcel() {
         });
       }
     }
-    for (let index = 0; index < incoming.length; index += 500) {
-      const { error } = await supabaseClient.from("assets").upsert(incoming.slice(index, index + 500));
+    // Workbook dapat memuat aset yang sama pada lebih dari satu sheet/baris.
+    // Kirim hanya satu record untuk setiap asset_uid agar unique constraint aman.
+    const deduplicatedMap = new Map();
+    for (const asset of incoming) {
+      const key = asset.asset_uid || asset.id;
+      const previous = deduplicatedMap.get(key);
+      deduplicatedMap.set(key, previous ? {
+        ...previous,
+        ...asset,
+        id: previous.id || asset.id,
+        condition: previous.condition || asset.condition,
+        status: previous.status || asset.status,
+        remark: asset.remark || previous.remark || "",
+        remarks: asset.remarks || previous.remarks || ""
+      } : asset);
+    }
+    const deduplicated = [...deduplicatedMap.values()];
+
+    for (let index = 0; index < deduplicated.length; index += 300) {
+      const batch = deduplicated.slice(index, index + 300);
+      const { error } = await supabaseClient.from("assets").upsert(batch, { onConflict: "id" });
       if (error) throw error;
     }
     const merged = new Map(state.assets.map((asset) => [asset.id, asset]));
-    incoming.forEach((asset) => merged.set(asset.id, asset));
+    deduplicated.forEach((asset) => merged.set(asset.id, asset));
     state.assets = [...merged.values()];
     refreshAll();
-    if ($("importStatus")) $("importStatus").textContent = `${incoming.length} baris selesai diproses. Dokumentasi foto tetap aman.`;
-    notify(`Import selesai: ${incoming.length} aset diproses.`, "success");
+    if ($("importStatus")) $("importStatus").textContent = `${incoming.length} baris dibaca, ${deduplicated.length} aset unik diproses. Dokumentasi foto tetap aman.`;
+    notify(`Import selesai: ${deduplicated.length} aset unik diproses.`, "success");
   } catch (error) {
     if ($("importStatus")) $("importStatus").textContent = `Gagal: ${error.message}`;
     notify(`Import gagal: ${error.message}`, "error");
@@ -838,6 +857,58 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
+/* ======================== EMAIL REPORT ======================== */
+
+async function sendManualReport() {
+  if (!isAdmin()) return notify("Hanya Administrator yang dapat mengirim laporan.", "error");
+  const recipient = value("reportRecipient");
+  const areaGroup = value("reportArea");
+  const functionalLocation = value("reportFunloc");
+  const category = value("reportCategory");
+
+  if (!recipient || !recipient.includes("@")) {
+    return notify("Isi alamat email penerima yang valid.", "error");
+  }
+
+  setBusy(true, "Membuat dan mengirim laporan email...");
+  if ($("emailStatus")) $("emailStatus").textContent = "Mengirim laporan...";
+
+  try {
+    const { data, error } = await withTimeout(
+      supabaseClient.functions.invoke("trigger-asset-report", {
+        body: {
+          mode: "manual",
+          recipient,
+          filters: {
+            area_group: areaGroup || null,
+            functional_location: functionalLocation || null,
+            category: category || null
+          }
+        }
+      }),
+      120000,
+      "Pengiriman laporan"
+    );
+    if (error) throw error;
+    if (!data?.ok) throw new Error(data?.error || "Laporan tidak berhasil dikirim");
+    const message = `Permintaan laporan berhasil dikirim. GitHub Actions sedang membuat dan mengirim email ke ${recipient}.`;
+    if ($("emailStatus")) $("emailStatus").textContent = message;
+    notify(message, "success");
+  } catch (error) {
+    const message = `Email gagal dikirim: ${error.message}`;
+    if ($("emailStatus")) $("emailStatus").textContent = message;
+    notify(message, "error");
+  } finally {
+    setBusy(false);
+  }
+}
+
+function refreshReportFilters() {
+  fillSelect("reportArea", "Semua Area", uniqueValues("area_group"));
+  fillSelect("reportCategory", "Semua Category", uniqueValues("category"));
+  fillSelect("reportFunloc", "Semua Functional Location", uniqueValues("functional_location"));
+}
+
 /* ======================== NAVIGATION & INIT ======================== */
 
 function closeModal(id) { show(id, false); }
@@ -850,6 +921,7 @@ function showView(id) {
 
 function refreshAll() {
   refreshFilters();
+  refreshReportFilters();
   renderDashboard();
   renderAssetTable();
 }
@@ -898,6 +970,7 @@ window.openPhotoManager = openPhotoManager;
 window.deleteAsset = deleteAsset;
 window.importExcel = importExcel;
 window.exportCSV = exportCSV;
+window.sendManualReport = sendManualReport;
 
 async function startApplicationSafely() {
   try {

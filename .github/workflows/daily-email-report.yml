@@ -7,67 +7,68 @@ on:
     - cron: '0 0 * * *'
 
   workflow_dispatch:
-    inputs:
+    inputs*
       recipient:
-        description: 'Email penerima (kosongkan untuk memakai REPORT_TO)'
-        required: false
+        descript*on: 'Email penerima, kosongkan unt*k memakai REPORT_TO'
+        requi*ed: false
         type: string
-      area_group:
-        description: 'Filter Area (opsional)'
-        required: false
-        type: string
+
+  *   area_group:
+        description* 'Filter Area, opsional'
+        r*quired: false
+        type: string*
       functional_location:
-        description: 'Filter Functional Location (opsional)'
-        required: false
-        type: string
-      category:
-        description: 'Filter Category (opsional)'
-        required: false
+      * description: 'Filter Functional L*cation, opsional'
+        required* false
         type: string
 
-  repository_dispatch:
+     *category:
+        description: 'Fi*ter Category, opsional'
+        re*uired: false
+        type: string
+*  repository_dispatch:
     types:
-      - manual-asset-report
+*     - manual-asset-report
 
-concurrency:
+concur*ency:
   group: asset-email-report
-  cancel-in-progress: false
+* cancel-in-progress: false
 
-permissions:
+permis*ions:
   contents: read
 
 jobs:
-  send-report:
-    name: Generate and send asset report
-    runs-on: ubuntu-latest
+  se*d-report:
+    name: Generate and s*nd asset report
+    runs-on: ubunt*-latest
     timeout-minutes: 20
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+ *  steps:
+      - name: Checkout re*ository
+        uses: actions/chec*out@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node.j*
+        uses: actions/setup-node@*4
         with:
-          node-version: '20'
+          node-ver*ion: '20'
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci --omit=dev
+  *   - name: Install dependencies
+  *     run: npm ci --omit=dev
 
-      - name: Generate and send report
-        run: npm run report
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          REPORT_TO: ${{ secrets.REPORT_TO }}
+     *- name: Generate and send report
+ *      run: npm run report
+        *nv:
+          SUPABASE_URL: ${{ se*rets.SUPABASE_URL }}
+          SUP*BASE_SERVICE_ROLE_KEY: ${{ secrets*SUPABASE_SERVICE_ROLE_KEY }}
 
-          # Tombol manual dari aplikasi memakai client_payload.
-          # Run workflow manual memakai inputs.
-          # Schedule otomatis memakai REPORT_TO.
-          REPORT_RECIPIENT: ${{ github.event.client_payload.recipient || inputs.recipient || secrets.REPORT_TO }}
-          REPORT_AREA: ${{ github.event.client_payload.area_group || inputs.area_group || '' }}
-          REPORT_FUNLOC: ${{ github.event.client_payload.functional_location || inputs.functional_location || '' }}
-          REPORT_CATEGORY: ${{ github.event.client_payload.category || inputs.category || '' }}
+    *     SMTP_USER: ${{ secrets.SMTP_U*ER }}
+          SMTP_PASS: ${{ sec*ets.SMTP_PASS }}
+          EMAIL_F*OM_NAME: ${{ secrets.EMAIL_FROM_NA*E }}
+
+          REPORT_TO: ${{ sec*ets.REPORT_TO }}
+
+          REPORT*RECIPIENT: ${{ github.event.client*payload.recipient || inputs.recipi*nt || secrets.REPORT_TO }}
+       *  REPORT_AREA: ${{ github.event.cl*ent_payload.area_group || inputs.a*ea_group || '' }}
+          REPORT*FUNLOC: ${{ github.event.client_pa*load.functional_location || inputs*functional_location || '' }}
+     *    REPORT_CATEGORY: ${{ github.ev*nt.client_payload.category || inpu*s.category || '' }}

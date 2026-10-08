@@ -1,0 +1,7 @@
+{
+  "name": "pim-asset-report",
+  "private": true,
+  "type": "module",
+  "scripts": { "report": "node daily-report.mjs" },
+  "dependencies": { "nodemailer": "^6.9.16" }
+}

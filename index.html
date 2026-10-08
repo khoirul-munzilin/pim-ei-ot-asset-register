@@ -91,7 +91,7 @@ $('planUploadForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e
             <button class="mad-close" id="madCloseMarker">×</button>
             <h3>Tambah Marker Area</h3>
             <form id="madMarkerForm" class="mad-form" style="grid-template-columns:1fr">
-              <label>Pilih Plant/Area
+              <label>Pilih Grup Prefix Funloc
                 <select name="area_name" id="madAreaSelect" required></select>
               </label>
               <input type="hidden" name="map_x"><input type="hidden" name="map_y"><input type="hidden" name="site_plan_id">
@@ -132,8 +132,19 @@ $('planUploadForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e
     await fetchAllAssets();
   }
 
+  function getFunlocPrefix(value) {
+    const raw = clean(value).toUpperCase();
+    if (!raw) return '';
+    return raw.split(/[.\/_-]/)[0].trim();
+  }
+
+  function getAssetGroup(asset) {
+    return getFunlocPrefix(asset.functional_location) || getFunlocPrefix(asset.plant_area) || 'BELUM TERIDENTIFIKASI';
+  }
+
   function assetsForArea(areaName) {
-    return allAssets.filter(asset => norm(asset.plant_area) === norm(areaName));
+    const target = norm(areaName);
+    return allAssets.filter(asset => norm(getAssetGroup(asset)) === target);
   }
 
   function ensureAreaPanel() {
@@ -153,26 +164,42 @@ $('planUploadForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e
     const panel = ensureAreaPanel();
     if (!panel) return;
     const matched = assetsForArea(areaName);
+    const documented = matched.filter(asset => clean(asset.equipment_number)).length;
+    const categories = [...new Set(matched.map(asset => clean(asset.category) || 'Tanpa Kategori'))]
+      .map(name => ({ name, count: matched.filter(asset => (clean(asset.category) || 'Tanpa Kategori') === name).length }))
+      .sort((a, b) => b.count - a.count);
     panel.innerHTML = `
       <div class="mad-head">
-        <div><h3>${escapeHtml(areaName)}</h3><div class="mad-summary">${matched.length.toLocaleString('id-ID')} asset ditemukan berdasarkan Plant/Area</div></div>
+        <div><h3>Grup ${escapeHtml(areaName)}</h3><div class="mad-summary">${matched.length.toLocaleString('id-ID')} asset berdasarkan prefix Functional Location · ${documented.toLocaleString('id-ID')} Equipment Number terisi</div></div>
       </div>
-      <input class="mad-search" id="madAreaSearch" placeholder="Cari Tagname, kategori, Functional Location, Equipment Number">
-      <div class="mad-list" id="madAssetList"></div>
+      <div class="mad-list" id="madCategoryList"></div>
+      <div id="madCategoryAssets"></div>
     `;
-    const draw = query => {
-      const q = norm(query);
-      const filtered = matched.filter(asset => !q || norm([asset.tagname, asset.category, asset.functional_location, asset.equipment_number, asset.object_type, asset.brand, asset.model].join(' ')).includes(q));
-      document.getElementById('madAssetList').innerHTML = filtered.length ? filtered.map(asset => `
-        <button class="mad-item" data-asset-id="${asset.id}">
-          <b>${escapeHtml(asset.tagname)}</b>
-          <small>${escapeHtml(asset.category)} · ${escapeHtml(asset.condition || 'Belum Diverifikasi')}</small>
-        </button>
-      `).join('') : '<div class="mad-empty">Asset tidak ditemukan.</div>';
-      document.querySelectorAll('[data-asset-id]').forEach(button => button.onclick = () => showAsset(button.dataset.assetId));
-    };
-    draw('');
-    document.getElementById('madAreaSearch').oninput = event => draw(event.target.value);
+    const categoryList = document.getElementById('madCategoryList');
+    categoryList.innerHTML = categories.length ? categories.map(category => `
+      <button class="mad-item" data-category="${escapeHtml(category.name)}">
+        <b>${escapeHtml(category.name)}</b><small>${category.count.toLocaleString('id-ID')} asset</small>
+      </button>
+    `).join('') : '<div class="mad-empty">Belum ada asset dengan prefix ini.</div>';
+    document.querySelectorAll('[data-category]').forEach(button => button.onclick = () => {
+      const category = button.dataset.category;
+      const rows = matched.filter(asset => (clean(asset.category) || 'Tanpa Kategori') === category);
+      document.getElementById('madCategoryAssets').innerHTML = `
+        <div class="mad-head" style="margin-top:14px"><div><h3>${escapeHtml(category)}</h3><div class="mad-summary">${rows.length.toLocaleString('id-ID')} asset</div></div></div>
+        <input class="mad-search" id="madAreaSearch" placeholder="Cari Tagname, Functional Location, Equipment Number">
+        <div class="mad-list" id="madAssetList"></div>
+      `;
+      const draw = query => {
+        const q = norm(query);
+        const filtered = rows.filter(asset => !q || norm([asset.tagname, asset.functional_location, asset.equipment_number, asset.object_type, asset.brand, asset.model].join(' ')).includes(q));
+        document.getElementById('madAssetList').innerHTML = filtered.length ? filtered.map(asset => `
+          <button class="mad-item" data-asset-id="${asset.id}"><b>${escapeHtml(asset.tagname)}</b><small>${escapeHtml(asset.functional_location) || 'Funloc belum diisi'} · ${escapeHtml(asset.condition || 'Belum Diverifikasi')}</small></button>
+        `).join('') : '<div class="mad-empty">Asset tidak ditemukan.</div>';
+        document.querySelectorAll('[data-asset-id]').forEach(item => item.onclick = () => showAsset(item.dataset.assetId));
+      };
+      draw('');
+      document.getElementById('madAreaSearch').oninput = event => draw(event.target.value);
+    });
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -237,7 +264,7 @@ $('planUploadForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e
     const y = ((event.clientY - rect.top) / rect.height * 100).toFixed(2);
     const planResult = await client.from('site_plans').select('id').eq('active', true).order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (planResult.error || !planResult.data) return notify('Denah aktif tidak ditemukan.');
-    const areas = [...new Set(allAssets.map(asset => clean(asset.plant_area)).filter(Boolean))].sort();
+    const areas = [...new Set(allAssets.map(getAssetGroup).filter(group => group && group !== 'BELUM TERIDENTIFIKASI'))].sort();
     const select = document.getElementById('madAreaSelect');
     select.innerHTML = '<option value="">Pilih area...</option>' + areas.map(area => `<option value="${escapeHtml(area)}">${escapeHtml(area)}</option>`).join('');
     const form = document.getElementById('madMarkerForm');

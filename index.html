@@ -6,19 +6,65 @@
   <meta name="theme-color" content="#0f766e">
   <meta name="description" content="PIM EI & OT Asset Register and Documentation">
   <title>PIM EI & OT Asset Register</title>
-<link
-  rel="icon"
-  type="image/png"
-  href="favicon-pim.png?v=20261008-1"
->
-  <link rel="stylesheet" href="style.css?v=20261008-interactive-final">
-  <link rel="stylesheet" href="interactive-ui.css?v=20261008-interactive-final">
+
+  <link rel="icon" type="image/png" href="favicon-pim.png?v=20261009-final">
+  <link rel="stylesheet" href="style.css?v=20261009-final">
+  <link rel="stylesheet" href="interactive-ui.css?v=20261009-final">
 
   <style>
-    #appBusy,.loading-overlay,.processing-overlay{display:none!important;visibility:hidden!important;pointer-events:none!important}
-    html,body{overflow:auto!important}
-    .app-inline-status{position:fixed;right:18px;bottom:18px;z-index:9000;max-width:min(390px,calc(100vw - 36px));padding:11px 15px;border-radius:12px;background:#174f42;color:#fff;box-shadow:0 12px 30px rgba(0,0,0,.2);font-size:13px}
-    .app-inline-status[hidden]{display:none!important}
+    #appBusy,
+    .loading-overlay,
+    .processing-overlay {
+      display: none !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+    }
+
+    html,
+    body {
+      overflow: auto !important;
+    }
+
+    .app-inline-status {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 9000;
+      max-width: min(390px, calc(100vw - 36px));
+      padding: 11px 15px;
+      border-radius: 12px;
+      color: #ffffff;
+      background: #174f42;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+      font-size: 13px;
+    }
+
+    .app-inline-status[hidden] {
+      display: none !important;
+    }
+
+    .area-overview-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      margin-bottom: 20px;
+    }
+
+    .area-overview-grid .panel {
+      min-height: 180px;
+    }
+
+    .area-overview-grid .bars {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 18px;
+      max-height: none;
+    }
+
+    @media (max-width: 760px) {
+      .area-overview-grid .bars {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
@@ -48,33 +94,29 @@
           <h1>Dashboard Dokumentasi Aset</h1>
           <p>Informasi EI &amp; OT terpusat, interaktif, dan mengikuti data terbaru.</p>
         </div>
+
         <div class="search">
-          <input id="globalSearch" type="search" autocomplete="off" placeholder="Cari tagname, equipment, funloc, area..." aria-label="Pencarian aset">
+          <input
+            id="globalSearch"
+            type="search"
+            autocomplete="off"
+            placeholder="Cari tagname, equipment, funloc, area..."
+            aria-label="Pencarian aset"
+          >
           <button type="button" data-view="assets">Cari</button>
         </div>
       </div>
 
       <div id="kpis" class="kpis"></div>
 
-      <div class="grid">
-        <article class="panel map-panel">
+      <div class="area-overview-grid">
+        <article class="panel">
           <div class="panel-head">
             <div>
-              <h2>Denah Area Pabrik</h2>
-              <p>Klik marker atau pilih area untuk membuka daftar aset.</p>
+              <h2>Distribusi Area</h2>
+              <p>Klik area untuk membuka daftar aset terkait.</p>
             </div>
-            <select id="mapArea" aria-label="Pilih area pada denah">
-              <option value="">Pilih area...</option>
-            </select>
           </div>
-          <div class="map">
-            <img src="assets/denah-area-pabrik.png" alt="Denah area pabrik" loading="eager">
-            <div id="markers"></div>
-          </div>
-        </article>
-
-        <article class="panel">
-          <h2>Distribusi Area</h2>
           <div id="areaChart" class="bars"></div>
         </article>
       </div>
@@ -83,7 +125,7 @@
         <div class="panel-head">
           <div>
             <h2>Aset Terbaru atau Diperbarui</h2>
-            <p>Akses cepat ke data yang baru berubah.</p>
+            <p>Akses cepat ke data aset yang baru diperbarui.</p>
           </div>
           <button type="button" data-view="assets">Lihat Semua</button>
         </div>
@@ -93,7 +135,11 @@
 
     <section id="assets" class="view hidden">
       <div class="page-head">
-        <div><h1>Daftar Aset</h1><p id="assetCount">Memuat data aset...</p></div>
+        <div>
+          <h1>Daftar Aset</h1>
+          <p id="assetCount">Memuat data aset...</p>
+        </div>
+
         <div class="actions">
           <button type="button" onclick="exportCSV()">Unduh CSV</button>
           <button type="button" id="addBtn" class="primary hidden">+ Tambah Aset</button>
@@ -102,9 +148,16 @@
 
       <div class="filters">
         <input id="search" type="search" autocomplete="off" placeholder="Cari semua kolom">
-        <select id="areaFilter"><option value="">Semua Area</option></select>
-        <select id="categoryFilter"><option value="">Semua Category</option></select>
-        <select id="statusFilter">
+
+        <select id="areaFilter" aria-label="Filter area">
+          <option value="">Semua Area</option>
+        </select>
+
+        <select id="categoryFilter" aria-label="Filter kategori">
+          <option value="">Semua Category</option>
+        </select>
+
+        <select id="statusFilter" aria-label="Filter status">
           <option value="">Semua Status</option>
           <option value="Active">Active</option>
           <option value="Inactive">Inactive</option>
@@ -114,22 +167,37 @@
 
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Category</th><th>Tagname</th><th>Functional Location</th><th>Equipment No.</th><th>Plant/Area</th><th>Area Mapping</th><th>Status</th><th>Aksi</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Tagname</th>
+              <th>Functional Location</th>
+              <th>Equipment No.</th>
+              <th>Plant/Area</th>
+              <th>Area Mapping</th>
+              <th>Status</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
           <tbody id="assetRows"></tbody>
         </table>
       </div>
+
       <div id="pager" class="pager"></div>
     </section>
 
     <section id="manage" class="view hidden">
       <div class="page-head">
-        <div><h1>Kelola Database</h1><p>Sinkronisasi data, pengiriman laporan, dan pengaturan akses.</p></div>
+        <div>
+          <h1>Kelola Database</h1>
+          <p>Sinkronisasi aset, pengiriman laporan, dan informasi hak akses.</p>
+        </div>
       </div>
 
       <div class="manage-grid">
         <article class="panel" data-admin-only>
           <h2>Import Excel</h2>
-          <p>Sinkronkan aset baru dan perubahan data tanpa menghapus dokumentasi foto.</p>
+          <p>Sinkronkan data aset tanpa menghapus dokumentasi foto.</p>
           <input id="excelFile" type="file" accept=".xlsx,.xls">
           <button type="button" class="primary" onclick="importExcel()">Import &amp; Sinkronkan</button>
           <div id="importStatus" aria-live="polite"></div>
@@ -138,13 +206,43 @@
         <article class="panel" data-admin-only>
           <h2>Laporan Email</h2>
           <p>Kirim laporan manual atau gunakan jadwal otomatis setiap hari pukul 07.00 WIB.</p>
-          <label>Email Penerima<input id="reportRecipient" type="email" value="smartworkreport@gmail.com" placeholder="nama@perusahaan.com"></label>
+
+          <label>
+            Email Penerima
+            <input
+              id="reportRecipient"
+              type="email"
+              value="smartworkreport@gmail.com"
+              placeholder="nama@perusahaan.com"
+            >
+          </label>
+
           <div class="form-grid">
-            <label>Area<select id="reportArea"><option value="">Semua Area</option></select></label>
-            <label>Functional Location<select id="reportFunloc"><option value="">Semua Functional Location</option></select></label>
-            <label>Category<select id="reportCategory"><option value="">Semua Category</option></select></label>
+            <label>
+              Area
+              <select id="reportArea">
+                <option value="">Semua Area</option>
+              </select>
+            </label>
+
+            <label>
+              Functional Location
+              <select id="reportFunloc">
+                <option value="">Semua Functional Location</option>
+              </select>
+            </label>
+
+            <label>
+              Category
+              <select id="reportCategory">
+                <option value="">Semua Category</option>
+              </select>
+            </label>
           </div>
-          <button type="button" class="primary" onclick="sendManualReport()">Kirim Laporan Email</button>
+
+          <button type="button" class="primary" onclick="sendManualReport()">
+            Kirim Laporan Email
+          </button>
           <p id="emailStatus" aria-live="polite"></p>
         </article>
 
@@ -152,7 +250,7 @@
           <h2>Hak Akses</h2>
           <ul>
             <li><strong>Viewer:</strong> melihat dashboard, aset, foto, dan deskripsi.</li>
-            <li><strong>Technician:</strong> memperbarui kondisi, remark, dan dokumentasi.</li>
+            <li><strong>Technician:</strong> memperbarui kondisi dan dokumentasi foto.</li>
             <li><strong>Administrator:</strong> mengelola master, import, report, dan penghapusan.</li>
           </ul>
         </article>
@@ -164,8 +262,17 @@
     <form id="loginForm" class="dialog">
       <button type="button" class="close" onclick="closeModal('loginModal')" aria-label="Tutup">×</button>
       <h2 id="loginTitle">Login Internal</h2>
-      <label>Email<input id="email" type="email" autocomplete="username" required></label>
-      <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+
+      <label>
+        Email
+        <input id="email" type="email" autocomplete="username" required>
+      </label>
+
+      <label>
+        Password
+        <input id="password" type="password" autocomplete="current-password" required>
+      </label>
+
       <button class="primary" type="submit">Login</button>
       <p id="loginError" class="error" aria-live="polite"></p>
     </form>
@@ -176,6 +283,7 @@
       <button type="button" class="close" onclick="closeModal('editModal')" aria-label="Tutup">×</button>
       <h2 id="editTitle">Data Aset</h2>
       <input id="assetId" type="hidden">
+
       <div class="form-grid">
         <label>Category<input id="fCategory" required></label>
         <label>Tagname<input id="fTagname"></label>
@@ -185,35 +293,70 @@
         <label>Area Mapping<select id="fArea"></select></label>
         <label>Brand<input id="fBrand"></label>
         <label>Model<input id="fModel"></label>
-        <label>Status<select id="fStatus"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Repair">Repair</option></select></label>
-        <label>Condition<select id="fCondition"><option value="Good">Good</option><option value="Warning">Warning</option><option value="Bad">Bad</option><option value="Unknown">Unknown</option></select></label>
-        <label class="full">Remark<textarea id="fRemark" placeholder="Catatan kondisi atau tindak lanjut"></textarea></label>
+
+        <label>
+          Status
+          <select id="fStatus">
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Repair">Repair</option>
+          </select>
+        </label>
+
+        <label>
+          Condition
+          <select id="fCondition">
+            <option value="Good">Good</option>
+            <option value="Warning">Warning</option>
+            <option value="Bad">Bad</option>
+            <option value="Unknown">Unknown</option>
+          </select>
+        </label>
+
+        <label class="full">
+          Remark
+          <textarea id="fRemark" placeholder="Catatan kondisi atau tindak lanjut"></textarea>
+        </label>
       </div>
-      <div class="dialog-actions"><button type="button" onclick="closeModal('editModal')">Batal</button><button class="primary" type="submit">Simpan</button></div>
+
+      <div class="dialog-actions">
+        <button type="button" onclick="closeModal('editModal')">Batal</button>
+        <button class="primary" type="submit">Simpan</button>
+      </div>
+
       <p id="saveError" class="error" aria-live="polite"></p>
     </form>
   </div>
 
   <div id="appStatus" class="app-inline-status" hidden aria-live="polite"></div>
 
-  <script src="config.js?v=20261008-interactive-final"></script>
+  <!-- Urutan berikut wajib dipertahankan. -->
+  <script src="config.js?v=20261009-photo-final"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="app.js?v=20261008-interactive-final"></script>
-  <script src="interactive-dashboard.js?v=20261008-interactive-final"></script>
 
+  <!-- Hotfix harus dimuat sebelum app.js. -->
+  <script src="photo-gallery-hotfix.js?v=20261009-photo-final"></script>
+
+  <!-- Program utama. -->
+  <script src="app.js?v=20261009-photo-final"></script>
+
+  <!-- Fitur tampilan interaktif. -->
+  <script src="interactive-dashboard.js?v=20261009-photo-final"></script>
+
+  <!-- Pengaman overlay sederhana. -->
   <script>
     (() => {
-      const unlock = () => {
-        document.getElementById('appBusy')?.remove();
-        document.documentElement.style.overflow = '';
-        document.body.style.overflow = '';
-        document.body.removeAttribute('aria-busy');
+      const unlockPage = () => {
+        document.getElementById("appBusy")?.remove();
+        document.documentElement.style.overflow = "";
+        document.body.style.overflow = "";
+        document.body.removeAttribute("aria-busy");
       };
-      unlock();
-      new MutationObserver(() => unlock()).observe(document.documentElement,{childList:true,subtree:true});
-      window.addEventListener('pageshow',unlock);
-      window.addEventListener('load',unlock);
+
+      unlockPage();
+      window.addEventListener("pageshow", unlockPage);
+      window.addEventListener("load", unlockPage);
     })();
   </script>
 </body>

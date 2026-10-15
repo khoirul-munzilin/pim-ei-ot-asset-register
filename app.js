@@ -349,7 +349,7 @@ function refreshFilters() {
   }
 }
 
-function isAssetFullyDocumented(asset) {
+function getAssetDocumentationState(asset) {
   const assetId = String(asset.id ?? "").trim();
   const hasPhoto = (state.photos || []).some((photo) =>
     String(photo.asset_id ?? "").trim() === assetId && photo.is_active !== false
@@ -357,7 +357,15 @@ function isAssetFullyDocumented(asset) {
   const isActive = String(asset.status || "").trim().toLowerCase() === "active";
   const hasFunloc = Boolean(String(asset.functional_location || "").trim());
   const hasEquipment = Boolean(String(asset.equipment_no || asset.equipment_number || "").trim());
-  return hasPhoto && isActive && hasFunloc && hasEquipment;
+
+  // HIJAU: semua syarat lengkap.
+  if (hasPhoto && isActive && hasFunloc && hasEquipment) return "complete";
+
+  // MERAH: belum ada dokumentasi foto sama sekali.
+  if (!hasPhoto) return "empty";
+
+  // ORANYE: foto sudah ada, tetapi status/funloc/equipment belum lengkap.
+  return "partial";
 }
 
 function filteredAssets() {
@@ -365,9 +373,14 @@ function filteredAssets() {
   const area = value("areaFilter");
   const category = value("categoryFilter");
   const status = value("statusFilter");
+  const documentation = value("documentationFilter");
   return state.assets.filter((asset) => {
     const matchesSearch = !search || Object.values(asset).some((item) => String(item ?? "").toLowerCase().includes(search));
-    return matchesSearch && (!area || asset.area_group === area) && (!category || asset.category === category) && (!status || asset.status === status);
+    const documentationState = getAssetDocumentationState(asset);
+    const matchesDocumentation = !documentation ||
+      documentationState === documentation ||
+      (documentation === "empty" && documentationState !== "complete");
+    return matchesSearch && (!area || asset.area_group === area) && (!category || asset.category === category) && (!status || asset.status === status) && matchesDocumentation;
   });
 }
 
@@ -380,7 +393,7 @@ function renderAssetTable() {
   const rows = records.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
   if ($("assetCount")) $("assetCount").textContent = `${records.length.toLocaleString("id-ID")} aset ditemukan`;
   body.innerHTML = rows.map((asset) => `
-    <tr class="asset-documentation-${isAssetFullyDocumented(asset) ? "complete" : "incomplete"}">
+    <tr class="asset-documentation-${getAssetDocumentationState(asset)}">
       <td>${escapeHtml(asset.category || "-")}</td>
       <td><b>${escapeHtml(asset.tagname || "-")}</b></td>
       <td class="wrap">${escapeHtml(asset.functional_location || "-")}</td>
@@ -975,7 +988,7 @@ function bindEvents() {
   $("loginForm")?.addEventListener("submit", login);
   $("editForm")?.addEventListener("submit", saveAsset);
   $("addBtn")?.addEventListener("click", () => openEditor());
-  ["search", "areaFilter", "categoryFilter", "statusFilter"].forEach((id) => $(id)?.addEventListener("input", () => { state.page = 1; renderAssetTable(); }));
+  ["search", "areaFilter", "categoryFilter", "statusFilter", "documentationFilter"].forEach((id) => $(id)?.addEventListener("input", () => { state.page = 1; renderAssetTable(); }));
   $("mapArea")?.addEventListener("change", () => openArea(value("mapArea")));
   $("globalSearch")?.addEventListener("input", (event) => setValue("search", event.target.value));
   qa(".modal").forEach((modal) => modal.addEventListener("click", (event) => { if (event.target === modal) closeModal(modal.id); }));

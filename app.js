@@ -356,22 +356,31 @@ function renderAssetTable() {
   state.page = Math.min(Math.max(1, state.page), pages);
   const rows = records.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
   if ($("assetCount")) $("assetCount").textContent = `${records.length.toLocaleString("id-ID")} aset ditemukan`;
-  body.innerHTML = rows.map((asset) => `
-    <tr class="asset-documentation-${getAssetDocumentationState(asset)}">
-      <td>${escapeHtml(asset.category || "-")}</td>
-      <td><b>${escapeHtml(asset.tagname || "-")}</b></td>
-      <td class="wrap">${escapeHtml(asset.functional_location || "-")}</td>
-      <td>${escapeHtml(asset.equipment_no || "-")}</td>
-      <td>${escapeHtml(asset.plant_area || "-")}</td>
-      <td>${escapeHtml(asset.area_group || "-")}</td>
-      <td><span class="status">${escapeHtml(asset.status || "Active")}</span></td>
+  body.innerHTML = rows.map((asset) => {
+    const documentationState = getAssetDocumentationState(asset);
+    const documentationLabel = documentationState === "complete"
+      ? "Terdokumentasi Lengkap"
+      : documentationState === "partial"
+        ? "Dokumentasi Sebagian"
+        : "Belum Ada Foto";
+    return `
+    <tr class="asset-documentation-${documentationState}">
+      <td class="col-category"><span class="mobile-field-label">Kategori</span>${escapeHtml(asset.category || "-")}</td>
+      <td class="col-tag"><b>${escapeHtml(asset.tagname || "-")}</b></td>
+      <td class="wrap col-funloc"><span class="mobile-field-label">Functional Location</span>${escapeHtml(asset.functional_location || "-")}</td>
+      <td class="col-equipment"><span class="mobile-field-label">Equipment No.</span>${escapeHtml(asset.equipment_no || asset.equipment_number || "-")}</td>
+      <td class="col-plant"><span class="mobile-field-label">Plant/Area</span>${escapeHtml(asset.plant_area || "-")}</td>
+      <td class="col-area"><span class="mobile-field-label">Area Mapping</span>${escapeHtml(asset.area_group || "-")}</td>
+      <td class="col-status"><span class="status">${escapeHtml(asset.status || "Active")}</span></td>
+      <td class="mobile-documentation-state documentation-${documentationState}">${documentationLabel}</td>
       <td class="row-actions">
         <button type="button" data-detail="${escapeHtml(asset.id)}">Detail</button>
         ${canDocument() ? `<button type="button" data-photo="${escapeHtml(asset.id)}">Foto</button>` : ""}
         ${canDocument() ? `<button type="button" data-edit="${escapeHtml(asset.id)}">Edit</button>` : ""}
         ${isAdmin() ? `<button type="button" class="danger" data-delete="${escapeHtml(asset.id)}">Hapus</button>` : ""}
       </td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
   qa("[data-detail]", body).forEach((button) => button.addEventListener("click", () => openAssetDetail(button.dataset.detail)));
   qa("[data-photo]", body).forEach((button) => button.addEventListener("click", () => openPhotoManager(button.dataset.photo)));
   qa("[data-edit]", body).forEach((button) => button.addEventListener("click", () => openEditor(button.dataset.edit)));

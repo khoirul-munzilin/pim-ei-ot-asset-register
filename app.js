@@ -195,7 +195,7 @@ async function fetchAllRows(table, orderColumn = null) {
   while (true) {
     let request = supabaseClient.from(table).select("*").range(from, from + 999);
     if (orderColumn) request = request.order(orderColumn, { ascending: false });
-    const { data, error } = await withTimeout(request, 20000, `Memuat ${table}`);
+    const { data, error } = await withTimeout(request, 20000, "Memuat foto aset");
     if (error) throw error;
     if (!data?.length) break;
     all.push(...data);
@@ -230,6 +230,13 @@ async function loadAssets() {
       area_group: asset.area_group || asset.map_group || classifyArea(asset.functional_location, asset.plant_area, asset.tagname),
       asset_uid: asset.asset_uid || stableAssetUid(asset)
     }));
+    try {
+      await loadPhotos();
+    } catch (photoError) {
+      console.error("Foto aset gagal dimuat:", photoError);
+      state.photos = [];
+      notify(`Data aset berhasil dimuat, tetapi foto gagal dimuat: ${photoError.message}`, "error");
+    }
     refreshAll();
   } catch (error) {
     console.error(error);
@@ -245,7 +252,7 @@ async function loadPhotos(assetId = null) {
   if (!supabaseClient) return [];
   let request = supabaseClient.from("asset_photos").select("*").eq("is_active", true).order("uploaded_at", { ascending: false });
   if (assetId) request = request.eq("asset_id", assetId);
-  const { data, error } = await withTimeout(request, 20000, `Memuat ${table}`);
+  const { data, error } = await withTimeout(request, 20000, "Memuat foto aset");
   if (error) throw error;
   if (!assetId) state.photos = data || [];
   return data || [];
@@ -671,7 +678,7 @@ async function renderPhotoGallery(assetId) {
     }
     gallery.innerHTML = photos.map((photo) => `
       <article class="photo-card ${photo.is_primary ? "primary-photo" : ""}">
-        <img src="${escapeHtml(photo.photo_url)}" alt="${escapeHtml(photo.photo_type)}" loading="lazy">
+        <img src="${escapeHtml(photo.photo_url)}" alt="${escapeHtml(photo.photo_type)}" loading="lazy" onerror="this.closest('.photo-card').classList.add('photo-load-error'); this.insertAdjacentHTML('afterend', '<p class=&quot;photo-error-text&quot;>File foto tidak dapat dibuka.</p>'); this.remove();">
         <div class="photo-card-body">
           <b>${escapeHtml(photo.photo_type)}${photo.is_primary ? " · Utama" : ""}</b>
           <p>${escapeHtml(photo.description || "Tanpa deskripsi")}</p>
@@ -740,7 +747,7 @@ async function openAssetDetail(assetId) {
   </div>`;
   show("detailModal", true);
   const photos = await loadPhotos(assetId).catch(() => []);
-  $("detailPhotos").innerHTML = photos.length ? `<div class="photo-gallery">${photos.map((photo) => `<article class="photo-card ${photo.is_primary ? "primary-photo" : ""}"><img src="${escapeHtml(photo.photo_url)}" alt="Dokumentasi"><div class="photo-card-body"><b>${escapeHtml(photo.photo_type)}</b><p>${escapeHtml(photo.description)}</p><small>${escapeHtml(photo.condition)} · ${new Date(photo.taken_at || photo.uploaded_at).toLocaleString("id-ID")}</small></div></article>`).join("")}</div>` : "<p>Foto belum tersedia.</p>";
+  $("detailPhotos").innerHTML = photos.length ? `<div class="photo-gallery">${photos.map((photo) => `<article class="photo-card ${photo.is_primary ? "primary-photo" : ""}"><img src="${escapeHtml(photo.photo_url)}" alt="Dokumentasi" loading="lazy" onerror="this.closest('.photo-card').classList.add('photo-load-error'); this.insertAdjacentHTML('afterend', '<p class=&quot;photo-error-text&quot;>File foto tidak dapat dibuka.</p>'); this.remove();"><div class="photo-card-body"><b>${escapeHtml(photo.photo_type)}</b><p>${escapeHtml(photo.description)}</p><small>${escapeHtml(photo.condition)} · ${new Date(photo.taken_at || photo.uploaded_at).toLocaleString("id-ID")}</small></div></article>`).join("")}</div>` : "<p>Foto belum tersedia.</p>";
 }
 
 function ensureDetailModal() {

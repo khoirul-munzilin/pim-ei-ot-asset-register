@@ -235,7 +235,6 @@ async function loadAssets() {
     } catch (photoError) {
       console.error("Foto aset gagal dimuat:", photoError);
       state.photos = [];
-      notify(`Data aset berhasil dimuat, tetapi foto gagal dimuat: ${photoError.message}`, "error");
     }
     refreshAll();
   } catch (error) {
@@ -350,38 +349,15 @@ function refreshFilters() {
   }
 }
 
-function activePhotosForAsset(assetId) {
-  const id = String(assetId ?? "").trim();
-  return (state.photos || []).filter((photo) =>
-    String(photo.asset_id ?? "").trim() === id && photo.is_active !== false
+function isAssetFullyDocumented(asset) {
+  const assetId = String(asset.id ?? "").trim();
+  const hasPhoto = (state.photos || []).some((photo) =>
+    String(photo.asset_id ?? "").trim() === assetId && photo.is_active !== false
   );
-}
-
-function assetDocumentationStatus(asset) {
-  const photoCount = activePhotosForAsset(asset.id).length;
-  const hasPhoto = photoCount > 0;
   const isActive = String(asset.status || "").trim().toLowerCase() === "active";
   const hasFunloc = Boolean(String(asset.functional_location || "").trim());
   const hasEquipment = Boolean(String(asset.equipment_no || asset.equipment_number || "").trim());
-  const isComplete = hasPhoto && isActive && hasFunloc && hasEquipment;
-
-  const missing = [];
-  if (!hasPhoto) missing.push("foto");
-  if (!isActive) missing.push("status Active");
-  if (!hasFunloc) missing.push("Functional Location");
-  if (!hasEquipment) missing.push("Equipment No.");
-
-  return isComplete
-    ? {
-        code: "complete",
-        text: `Data & Dokumentasi Lengkap (${photoCount} foto)`,
-        missing: []
-      }
-    : {
-        code: "incomplete",
-        text: `Belum Lengkap: ${missing.join(", ")}`,
-        missing
-      };
+  return hasPhoto && isActive && hasFunloc && hasEquipment;
 }
 
 function filteredAssets() {
@@ -403,34 +379,22 @@ function renderAssetTable() {
   state.page = Math.min(Math.max(1, state.page), pages);
   const rows = records.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
   if ($("assetCount")) $("assetCount").textContent = `${records.length.toLocaleString("id-ID")} aset ditemukan`;
-  body.innerHTML = rows.map((asset) => {
-    const documentation = assetDocumentationStatus(asset);
-    return `
-    <tr class="asset-row asset-completeness-${documentation.code}">
-      <td class="col-category">${escapeHtml(asset.category || "-")}</td>
-      <td class="col-tag"><b>${escapeHtml(asset.tagname || "-")}</b></td>
-      <td class="wrap col-funloc">${escapeHtml(asset.functional_location || "-")}</td>
-      <td class="col-equipment">${escapeHtml(asset.equipment_no || "-")}</td>
-      <td class="col-plant">${escapeHtml(asset.plant_area || "-")}</td>
-      <td class="col-area">${escapeHtml(asset.area_group || "-")}</td>
-      <td class="col-status">
-        <span class="asset-state-badge ${documentation.code}">
-          ${documentation.code === "complete" ? "✓ Aset Terdokumentasi" : "! Aset Belum Terdokumentasi"}
-        </span>
-      </td>
-      <td class="col-documentation">
-        <span class="asset-completeness-badge ${documentation.code}">
-          ${documentation.code === "complete" ? "✓" : "!"} ${escapeHtml(documentation.text)}
-        </span>
-      </td>
+  body.innerHTML = rows.map((asset) => `
+    <tr class="asset-documentation-${isAssetFullyDocumented(asset) ? "complete" : "incomplete"}">
+      <td>${escapeHtml(asset.category || "-")}</td>
+      <td><b>${escapeHtml(asset.tagname || "-")}</b></td>
+      <td class="wrap">${escapeHtml(asset.functional_location || "-")}</td>
+      <td>${escapeHtml(asset.equipment_no || "-")}</td>
+      <td>${escapeHtml(asset.plant_area || "-")}</td>
+      <td>${escapeHtml(asset.area_group || "-")}</td>
+      <td><span class="status">${escapeHtml(asset.status || "Active")}</span></td>
       <td class="row-actions">
         <button type="button" data-detail="${escapeHtml(asset.id)}">Detail</button>
         ${canDocument() ? `<button type="button" data-photo="${escapeHtml(asset.id)}">Foto</button>` : ""}
         ${canDocument() ? `<button type="button" data-edit="${escapeHtml(asset.id)}">Edit</button>` : ""}
         ${isAdmin() ? `<button type="button" class="danger" data-delete="${escapeHtml(asset.id)}">Hapus</button>` : ""}
       </td>
-    </tr>`;
-  }).join("");
+    </tr>`).join("");
   qa("[data-detail]", body).forEach((button) => button.addEventListener("click", () => openAssetDetail(button.dataset.detail)));
   qa("[data-photo]", body).forEach((button) => button.addEventListener("click", () => openPhotoManager(button.dataset.photo)));
   qa("[data-edit]", body).forEach((button) => button.addEventListener("click", () => openEditor(button.dataset.edit)));
@@ -727,7 +691,7 @@ async function renderPhotoGallery(assetId) {
     }
     gallery.innerHTML = photos.map((photo) => `
       <article class="photo-card ${photo.is_primary ? "primary-photo" : ""}">
-        <img src="${escapeHtml(photo.photo_url)}" alt="${escapeHtml(photo.photo_type)}" loading="lazy" onerror="this.closest('.photo-card').classList.add('photo-load-error'); this.insertAdjacentHTML('afterend', '<p class=&quot;photo-error-text&quot;>File foto tidak dapat dibuka.</p>'); this.remove();">
+        <img src="${escapeHtml(photo.photo_url)}" alt="${escapeHtml(photo.photo_type)}" loading="lazy">
         <div class="photo-card-body">
           <b>${escapeHtml(photo.photo_type)}${photo.is_primary ? " · Utama" : ""}</b>
           <p>${escapeHtml(photo.description || "Tanpa deskripsi")}</p>
@@ -798,7 +762,7 @@ async function openAssetDetail(assetId) {
   </div>`;
   show("detailModal", true);
   const photos = await loadPhotos(assetId).catch(() => []);
-  $("detailPhotos").innerHTML = photos.length ? `<div class="photo-gallery">${photos.map((photo) => `<article class="photo-card ${photo.is_primary ? "primary-photo" : ""}"><img src="${escapeHtml(photo.photo_url)}" alt="Dokumentasi" loading="lazy" onerror="this.closest('.photo-card').classList.add('photo-load-error'); this.insertAdjacentHTML('afterend', '<p class=&quot;photo-error-text&quot;>File foto tidak dapat dibuka.</p>'); this.remove();"><div class="photo-card-body"><b>${escapeHtml(photo.photo_type)}</b><p>${escapeHtml(photo.description)}</p><small>${escapeHtml(photo.condition)} · ${new Date(photo.taken_at || photo.uploaded_at).toLocaleString("id-ID")}</small></div></article>`).join("")}</div>` : "<p>Foto belum tersedia.</p>";
+  $("detailPhotos").innerHTML = photos.length ? `<div class="photo-gallery">${photos.map((photo) => `<article class="photo-card ${photo.is_primary ? "primary-photo" : ""}"><img src="${escapeHtml(photo.photo_url)}" alt="Dokumentasi"><div class="photo-card-body"><b>${escapeHtml(photo.photo_type)}</b><p>${escapeHtml(photo.description)}</p><small>${escapeHtml(photo.condition)} · ${new Date(photo.taken_at || photo.uploaded_at).toLocaleString("id-ID")}</small></div></article>`).join("")}</div>` : "<p>Foto belum tersedia.</p>";
 }
 
 function ensureDetailModal() {

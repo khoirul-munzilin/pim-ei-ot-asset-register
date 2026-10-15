@@ -703,6 +703,7 @@ async function savePhotoDocumentation(event) {
     resetPhotoForm();
     await renderPhotoGallery(asset.id);
     await loadPhotos().catch(() => {});
+    renderDashboard();
     renderAssetTable();
     notify("Dokumentasi foto berhasil disimpan.", "success");
   } catch (error) {
@@ -771,6 +772,7 @@ async function deletePhoto(photoId, photos) {
     if (error) throw error;
     await renderPhotoGallery(state.selectedAssetId);
     await loadPhotos().catch(() => {});
+    renderDashboard();
     renderAssetTable();
     notify("Foto berhasil dihapus.", "success");
   } catch (error) {
@@ -1054,6 +1056,7 @@ async function initializeApp() {
   ensurePhotoModal();
   await loadAssets();
   await loadPhotos().catch(error => console.warn("Status dokumentasi tidak dapat dimuat:", error));
+  renderDashboard();
   renderAssetTable();
 }
 

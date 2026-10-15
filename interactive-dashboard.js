@@ -69,6 +69,8 @@
       </div>
     `;
     document.body.appendChild(quickSearch);
+    quickSearch.hidden = true;
+    quickSearch.style.setProperty("display", "none", "important");
 
     const backToTop = document.createElement("button");
     backToTop.id = "safeBackToTop";
@@ -130,12 +132,22 @@
   }
 
   function openQuickSearch() {
-    qs("#safeQuickSearch")?.classList.remove("hidden");
+    const search = qs("#safeQuickSearch");
+    if (!search) return;
+    search.classList.remove("hidden");
+    search.hidden = false;
+    search.style.setProperty("display", "grid", "important");
+    document.body.classList.add("quick-search-open");
     window.setTimeout(() => qs("#safeQuickSearchInput")?.focus(), 20);
   }
 
   function closeQuickSearch() {
-    qs("#safeQuickSearch")?.classList.add("hidden");
+    const search = qs("#safeQuickSearch");
+    if (!search) return;
+    search.classList.add("hidden");
+    search.hidden = true;
+    search.style.setProperty("display", "none", "important");
+    document.body.classList.remove("quick-search-open");
   }
 
   function openView(viewName) {
@@ -186,7 +198,11 @@
     });
 
     qs("#safeQuickSearchButton")?.addEventListener("click", openQuickSearch);
-    qs("#safeQuickSearchClose")?.addEventListener("click", closeQuickSearch);
+    qs("#safeQuickSearchClose")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeQuickSearch();
+    });
 
     qs("#safeQuickSearch")?.addEventListener("click", (event) => {
       if (event.target.id === "safeQuickSearch") closeQuickSearch();

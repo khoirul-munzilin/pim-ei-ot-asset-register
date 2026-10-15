@@ -413,7 +413,11 @@ function renderAssetTable() {
       <td class="col-equipment">${escapeHtml(asset.equipment_no || "-")}</td>
       <td class="col-plant">${escapeHtml(asset.plant_area || "-")}</td>
       <td class="col-area">${escapeHtml(asset.area_group || "-")}</td>
-      <td class="col-status"><span class="status">${escapeHtml(asset.status || "Active")}</span></td>
+      <td class="col-status">
+        <span class="asset-state-badge ${documentation.code}">
+          ${documentation.code === "complete" ? "✓ Aset Terdokumentasi" : "! Aset Belum Terdokumentasi"}
+        </span>
+      </td>
       <td class="col-documentation">
         <span class="asset-completeness-badge ${documentation.code}">
           ${documentation.code === "complete" ? "✓" : "!"} ${escapeHtml(documentation.text)}

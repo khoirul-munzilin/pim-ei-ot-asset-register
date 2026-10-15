@@ -447,12 +447,157 @@ td.wrap { min-width: 230px; white-space: normal; }
   .search input { min-height: 48px; border-radius: 12px; background: #fff; }
 }
 
+/* ============================================================
+   DISTRIBUSI AREA - INTERACTIVE KPI CARDS
+   ============================================================ */
+.area-kpi-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
 
-/* Documentation usability */
-.asset-row-complete{background:#effcf4}.asset-row-empty{background:#fff8ed}.asset-row-complete td:first-child{border-left:5px solid #16a34a}.asset-row-empty td:first-child{border-left:5px solid #f59e0b}
-.documentation{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:10px;font-weight:800;white-space:nowrap}.documentation-complete{color:#087348;background:#dff7e9}.documentation-empty{color:#9a5b00;background:#fff0c2}
-.photo-card img,.clickable-photo{object-fit:contain!important;background:#edf3f1;cursor:zoom-in}.full-photo-viewer{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,.94)}.full-photo-viewer img{max-width:96vw;max-height:92vh;width:auto;height:auto;object-fit:contain}.full-photo-viewer button{position:fixed;top:16px;right:16px;width:48px;height:48px;padding:0;border:0;border-radius:50%;color:#fff;background:#ffffff2b;font-size:30px}
-@media(max-width:760px){.table-wrap{overflow:visible;border:0;background:transparent}.table-wrap table,.table-wrap thead,.table-wrap tbody,.table-wrap tr,.table-wrap td{display:block}.table-wrap thead{display:none}.table-wrap tbody{display:grid;gap:12px}.table-wrap tr{padding:14px;border:1px solid var(--border);border-radius:16px;background:#fff;box-shadow:var(--shadow-sm)}.table-wrap td{padding:5px 8px;border:0;white-space:normal}.table-wrap td:nth-child(1),.table-wrap td:nth-child(4),.table-wrap td:nth-child(5),.table-wrap td:nth-child(6){display:none}.table-wrap td:nth-child(2){font-size:17px}.table-wrap td:nth-child(3){font-size:10px;color:var(--muted);word-break:break-word}.row-actions{display:grid!important;grid-template-columns:1fr 1fr;gap:8px!important;margin-top:8px}.row-actions button{min-height:44px}.photo-first-action{grid-column:1/-1;order:-1}.dialog.wide,.photo-manager-dialog{width:100%!important;max-width:none!important;height:100%;max-height:100vh;border-radius:0;padding:18px}.modal{padding:0}.photo-gallery{grid-template-columns:1fr!important;max-height:none!important}.photo-card img{height:auto!important;max-height:65vh}.detail-grid{grid-template-columns:1fr!important}}
+.area-kpi-card {
+  --area-accent: #0f766e;
+  --area-soft: #e6fffa;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 190px;
+  padding: 18px;
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  border-radius: 20px;
+  color: #153d38;
+  text-align: left;
+  background: linear-gradient(145deg, #ffffff 0%, var(--area-soft) 135%);
+  box-shadow: 0 8px 24px rgba(17, 47, 43, 0.08);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
 
-/* Clickable dashboard queues */
-.kpi-clickable{width:100%;text-align:left;cursor:pointer;border:1px solid transparent;font:inherit;color:inherit}.kpi-clickable:hover{transform:translateY(-2px);border-color:#0f766e;box-shadow:0 10px 24px rgba(15,118,110,.16)}.kpi-clickable small{display:block;margin-top:8px;color:#0f766e;font-weight:700;font-size:10px}.kpi-clickable:focus-visible{outline:3px solid rgba(15,118,110,.28);outline-offset:2px}
+.area-kpi-card::after {
+  content: "";
+  position: absolute;
+  width: 110px;
+  height: 110px;
+  right: -48px;
+  bottom: -55px;
+  border-radius: 50%;
+  background: var(--area-accent);
+  opacity: .07;
+}
+
+.area-kpi-card:hover,
+.area-kpi-card:focus-visible {
+  transform: translateY(-4px);
+  border-color: var(--area-accent);
+  box-shadow: 0 16px 34px rgba(17, 47, 43, 0.16);
+  outline: none;
+}
+
+.area-kpi-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.area-kpi-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  font-size: 21px;
+  background: var(--area-soft);
+}
+
+.area-kpi-arrow {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--area-accent);
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(0,0,0,.08);
+}
+
+.area-kpi-name {
+  min-height: 38px;
+  margin-bottom: 3px;
+  color: #55706c;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.area-kpi-value {
+  color: #102f2b;
+  font-size: clamp(25px, 2.2vw, 34px);
+  line-height: 1.12;
+}
+
+.area-kpi-value small {
+  color: #69807d;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.area-kpi-percent {
+  margin-top: 5px;
+  color: #708581;
+  font-size: 12px;
+}
+
+.area-kpi-progress {
+  width: 100%;
+  height: 7px;
+  margin-top: 14px;
+  border-radius: 99px;
+  background: #dfe9e7;
+  overflow: hidden;
+}
+
+.area-kpi-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--area-accent), color-mix(in srgb, var(--area-accent) 65%, white));
+}
+
+.area-kpi-action {
+  margin-top: 10px;
+  color: var(--area-accent);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.area-color-1 { --area-accent:#0f766e; --area-soft:#dff8f3; }
+.area-color-2 { --area-accent:#2563eb; --area-soft:#e6efff; }
+.area-color-3 { --area-accent:#7c3aed; --area-soft:#f0e8ff; }
+.area-color-4 { --area-accent:#d97706; --area-soft:#fff1d9; }
+.area-color-5 { --area-accent:#dc2626; --area-soft:#ffe7e7; }
+.area-color-6 { --area-accent:#0891b2; --area-soft:#dff7fc; }
+
+@media (max-width: 1100px) {
+  .area-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+
+@media (max-width: 760px) {
+  .area-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
+  .area-kpi-card { min-height: 166px; padding: 14px; border-radius: 16px; }
+  .area-kpi-icon { width: 36px; height: 36px; font-size: 18px; }
+  .area-kpi-name { min-height: 33px; font-size: 10px; }
+  .area-kpi-value { font-size: 25px; }
+  .area-kpi-percent { font-size: 10px; }
+}
+
+@media (max-width: 380px) {
+  .area-kpi-grid { grid-template-columns: 1fr !important; }
+}

@@ -66,7 +66,7 @@
       }
     }
   </style>
-  <link rel="stylesheet" href="futuristic-theme.css?v=20261015-future-v1">
+  <link rel="stylesheet" href="futuristic-theme.css?v=20261015-future-v2">
 </head>
 <body>
   <header>
@@ -81,9 +81,12 @@
       <button type="button" id="manageBtn" class="hidden" data-view="manage">Kelola</button>
     </nav>
 
-    <div id="userBox">
-      <span id="roleBadge">VIEWER</span>
-      <button type="button" id="loginBtn">Login</button>
+    <div id="userBox" aria-label="Akun pengguna">
+      <div class="user-copy">
+        <span id="roleBadge">VIEWER</span>
+        <small id="loginHint">Login teknisi / admin</small>
+      </div>
+      <button type="button" id="loginBtn" title="Login teknisi atau administrator">Login</button>
       <button type="button" id="logoutBtn" class="hidden">Logout</button>
     </div>
   </header>
@@ -265,6 +268,10 @@
         </article>
       </div>
     </section>
+    <footer class="app-credit" aria-label="Informasi pengembang">
+      <span>PIM EI &amp; OT Asset Intelligence</span>
+      <small>Created by Khoirul Munzilin</small>
+    </footer>
   </main>
 
   <div id="loginModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
@@ -347,7 +354,7 @@
   <!-- Hotfix harus dimuat sebelum app.js. -->
 
   <!-- Program utama. -->
-  <script src="app.js?v=20261015-future-v1"></script>
+  <script src="app.js?v=20261015-future-v2"></script>
 
   <!-- Fitur tampilan interaktif. -->
   <script src="interactive-dashboard.js?v=20261015-future-v1"></script>

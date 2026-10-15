@@ -47,4 +47,28 @@ main{max-width:1500px!important;margin:0 auto;padding:28px!important}.view{anima
   .app-credit{margin-top:24px;justify-content:center;text-align:center}
   .app-credit>span{display:none}
   .app-credit small{font-size:8px;opacity:.68}
+  /* Quick search close fix - must remain at the very bottom of futuristic-theme.css */
+#safeQuickSearch.hidden,
+#safeQuickSearch[hidden] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+#safeQuickSearch:not(.hidden):not([hidden]) {
+  display: grid !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+#safeQuickSearchClose {
+  position: relative !important;
+  z-index: 5 !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  touch-action: manipulation !important;
+}
+
 }

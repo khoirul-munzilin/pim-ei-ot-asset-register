@@ -142,7 +142,7 @@
 
         <div class="actions">
           <button type="button" onclick="exportCSV()">Unduh CSV</button>
-          <button type="button" class="primary" onclick="exportExcelWithPhotos()">Unduh Excel + Foto</button>
+          <button type="button" class="primary" data-admin-only onclick="document.getElementById('manageBtn').click(); setTimeout(() => document.getElementById('reportRecipient').focus(), 100)">Excel + Foto via Email</button>
           <button type="button" id="addBtn" class="primary hidden">+ Tambah Aset</button>
         </div>
       </div>
@@ -163,6 +163,12 @@
           <option value="Active">Active</option>
           <option value="Inactive">Inactive</option>
           <option value="Repair">Repair</option>
+        </select>
+
+        <select id="documentationFilter" aria-label="Filter dokumentasi">
+          <option value="">Semua Dokumentasi</option>
+          <option value="complete">Sudah Terdokumentasi</option>
+          <option value="empty">Belum Dokumentasi</option>
         </select>
       </div>
 
@@ -207,7 +213,7 @@
 
         <article class="panel" data-admin-only>
           <h2>Laporan Email</h2>
-          <p>Kirim laporan manual atau gunakan jadwal otomatis setiap hari pukul 07.30 WIB.</p>
+          <p>Kirim laporan manual atau gunakan jadwal otomatis setiap hari pukul 07.30 WIB. File Excel menyertakan foto terkompresi.</p>
 
           <label>
             Email Penerima
@@ -336,10 +342,8 @@
   <script src="config.js?v=20261009-photo-final"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 
   <!-- Hotfix harus dimuat sebelum app.js. -->
-  <script src="photo-gallery-hotfix.js?v=20261009-photo-final"></script>
 
   <!-- Program utama. -->
   <script src="app.js?v=20261009-photo-final"></script>

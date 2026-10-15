@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#061018">
+  <meta name="theme-color" content="#0f766e">
   <meta name="description" content="PIM EI & OT Asset Register and Documentation">
   <title>PIM EI & OT Asset Register</title>
 
   <link rel="icon" type="image/png" href="favicon-pim.png?v=20261009-final">
-  <link rel="stylesheet" href="style.css?v=20261015-future-v1">
-  <link rel="stylesheet" href="interactive-ui.css?v=20261015-future-v1">
+  <link rel="stylesheet" href="style.css?v=20261009-final">
+  <link rel="stylesheet" href="interactive-ui.css?v=20261009-final">
 
   <style>
     #appBusy,
@@ -66,7 +66,6 @@
       }
     }
   </style>
-  <link rel="stylesheet" href="futuristic-theme.css?v=20261015-future-v2">
 </head>
 <body>
   <header>
@@ -81,12 +80,9 @@
       <button type="button" id="manageBtn" class="hidden" data-view="manage">Kelola</button>
     </nav>
 
-    <div id="userBox" aria-label="Akun pengguna">
-      <div class="user-copy">
-        <span id="roleBadge">VIEWER</span>
-        <small id="loginHint">Login teknisi / admin</small>
-      </div>
-      <button type="button" id="loginBtn" title="Login teknisi atau administrator">Login</button>
+    <div id="userBox">
+      <span id="roleBadge">VIEWER</span>
+      <button type="button" id="loginBtn">Login</button>
       <button type="button" id="logoutBtn" class="hidden">Logout</button>
     </div>
   </header>
@@ -268,10 +264,6 @@
         </article>
       </div>
     </section>
-    <footer class="app-credit" aria-label="Informasi pengembang">
-      <span>PIM EI &amp; OT Asset Intelligence</span>
-      <small>Created by Khoirul Munzilin</small>
-    </footer>
   </main>
 
   <div id="loginModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
@@ -346,7 +338,6 @@
 
   <div id="appStatus" class="app-inline-status" hidden aria-live="polite"></div>
 
-  <script src="capacitor.js"></script>
   <!-- Urutan berikut wajib dipertahankan. -->
   <script src="config.js?v=20261009-photo-final"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -355,10 +346,10 @@
   <!-- Hotfix harus dimuat sebelum app.js. -->
 
   <!-- Program utama. -->
-  <script src="app.js?v=20261015-future-v2"></script>
+  <script src="app.js?v=20261009-photo-final"></script>
 
   <!-- Fitur tampilan interaktif. -->
-  <script src="interactive-dashboard.js?v=20261015-future-v1"></script>
+  <script src="interactive-dashboard.js?v=20261009-photo-final"></script>
 
   <!-- Pengaman overlay sederhana. -->
   <script>

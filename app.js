@@ -245,12 +245,38 @@ async function loadAssets() {
 
 async function loadPhotos(assetId = null) {
   if (!supabaseClient) return [];
-  let request = supabaseClient.from("asset_photos").select("*").eq("is_active", true).order("uploaded_at", { ascending: false });
-  if (assetId) request = request.eq("asset_id", assetId);
-  const { data, error } = await withTimeout(request, 20000, `Memuat asset_photos`);
-  if (error) throw error;
-  if (!assetId) state.photos = data || [];
-  return data || [];
+
+  // Foto lama dapat mempunyai is_active = null. Foto tersebut tetap dihitung sebagai dokumentasi.
+  if (assetId) {
+    const request = supabaseClient
+      .from("asset_photos")
+      .select("*")
+      .eq("asset_id", assetId)
+      .or("is_active.eq.true,is_active.is.null")
+      .order("uploaded_at", { ascending: false });
+    const { data, error } = await withTimeout(request, 20000, "Memuat foto aset");
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Ambil seluruh foto dengan pagination. Batas default Supabase biasanya hanya satu batch.
+  const allPhotos = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const request = supabaseClient
+      .from("asset_photos")
+      .select("*")
+      .or("is_active.eq.true,is_active.is.null")
+      .order("uploaded_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+    const { data, error } = await withTimeout(request, 30000, "Memuat seluruh dokumentasi foto");
+    if (error) throw error;
+    const batch = data || [];
+    allPhotos.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  state.photos = allPhotos;
+  return allPhotos;
 }
 
 /* ======================== DASHBOARD ======================== */
@@ -268,13 +294,15 @@ function renderDashboard() {
   const categoryCount = new Set(state.assets.map((a) => a.category).filter(Boolean)).size;
   const activeCount = state.assets.filter((a) => (a.status || "Active") === "Active").length;
   const unknownCount = state.assets.filter((a) => !normalize(a.area_group) || a.area_group === "AREA BELUM DITENTUKAN").length;
-  const incompleteDocumentationCount = state.assets.filter((a) => getAssetPhotos(a.id).length === 0).length;
+  const documentedAssetCount = state.assets.filter((asset) => getAssetPhotos(asset).length > 0).length;
+  const incompleteDocumentationCount = Math.max(0, state.assets.length - documentedAssetCount);
   if ($("kpis")) {
     $("kpis").innerHTML = [
       ["Total Aset", state.assets.length, "all"],
       ["Kategori", categoryCount, ""],
       ["Aset Aktif", activeCount, "active"],
       ["Perlu Mapping", unknownCount, "mapping"],
+      ["Sudah Dokumentasi", documentedAssetCount, "documented"],
       ["Belum Dokumentasi", incompleteDocumentationCount, "documentation"]
     ].map(([label, number, queue]) => queue
       ? `<button type="button" class="kpi kpi-clickable" data-asset-queue="${queue}"><span>${label}</span><b>${Number(number).toLocaleString("id-ID")}</b><small>Klik untuk lihat aset</small></button>`
@@ -338,18 +366,32 @@ function filteredAssets() {
   const documentation = value("documentationFilter") || state.documentationFilter;
   return state.assets.filter((asset) => {
     const matchesSearch = !search || Object.values(asset).some((item) => String(item ?? "").toLowerCase().includes(search));
-    const photoCount = getAssetPhotos(asset.id).length;
+    const photoCount = getAssetPhotos(asset).length;
     const matchesDocumentation = !documentation || (documentation === "complete" ? photoCount > 0 : photoCount === 0);
     return matchesSearch && (!area || asset.area_group === area) && (!category || asset.category === category) && (!status || asset.status === status) && matchesDocumentation;
   });
 }
 
 
-function getAssetPhotos(assetId) {
-  return state.photos.filter(photo => photo.asset_id === assetId && photo.is_active !== false);
+function sameKey(left, right) {
+  return normalize(left).toLowerCase() === normalize(right).toLowerCase() && normalize(left) !== "";
 }
-function getDocumentationInfo(assetId) {
-  const count = getAssetPhotos(assetId).length;
+function getAssetPhotos(assetOrId) {
+  const asset = typeof assetOrId === "object"
+    ? assetOrId
+    : state.assets.find(item => String(item.id) === String(assetOrId));
+  if (!asset) return [];
+
+  return state.photos.filter(photo => {
+    if (photo.is_active === false) return false;
+    return String(photo.asset_id || "") === String(asset.id || "")
+      || sameKey(photo.asset_uid, asset.asset_uid)
+      || sameKey(photo.tagname, asset.tagname)
+      || sameKey(photo.functional_location, asset.functional_location);
+  });
+}
+function getDocumentationInfo(assetOrId) {
+  const count = getAssetPhotos(assetOrId).length;
   return count > 0
     ? { code: "complete", label: `Terdokumentasi (${count})`, count }
     : { code: "empty", label: "Belum Ada Foto", count: 0 };
@@ -407,6 +449,9 @@ function openAssetQueue(queue) {
   } else if (queue === "documentation") {
     state.documentationFilter = "empty";
     setValue("documentationFilter", "empty");
+  } else if (queue === "documented") {
+    state.documentationFilter = "complete";
+    setValue("documentationFilter", "complete");
   } else if (queue === "active") {
     setValue("statusFilter", "Active");
   }

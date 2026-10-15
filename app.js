@@ -14,7 +14,8 @@ const supabaseClient = window.supabase?.createClient(
 
 const ADMIN_EMAIL = String(APP.ADMIN_EMAIL || "smartworkreport@gmail.com").toLowerCase();
 const PHOTO_BUCKET = "asset-photos";
-const PHOTO_MAX_SIZE = 5 * 1024 * 1024;
+const PHOTO_MAX_SIZE = 8 * 1024 * 1024;
+const PHOTO_TARGET_MAX = 480 * 1024;
 const PAGE_SIZE = 50;
 
 const state = {
@@ -195,7 +196,7 @@ async function fetchAllRows(table, orderColumn = null) {
   while (true) {
     let request = supabaseClient.from(table).select("*").range(from, from + 999);
     if (orderColumn) request = request.order(orderColumn, { ascending: false });
-    const { data, error } = await withTimeout(request, 20000, `Memuat ${table}`);
+    const { data, error } = await withTimeout(request, 20000, "Memuat asset_photos");
     if (error) throw error;
     if (!data?.length) break;
     all.push(...data);
@@ -230,6 +231,7 @@ async function loadAssets() {
       area_group: asset.area_group || asset.map_group || classifyArea(asset.functional_location, asset.plant_area, asset.tagname),
       asset_uid: asset.asset_uid || stableAssetUid(asset)
     }));
+    await loadPhotos().catch((error) => console.warn("Foto belum dapat dimuat:", error));
     refreshAll();
   } catch (error) {
     console.error(error);
@@ -245,7 +247,7 @@ async function loadPhotos(assetId = null) {
   if (!supabaseClient) return [];
   let request = supabaseClient.from("asset_photos").select("*").eq("is_active", true).order("uploaded_at", { ascending: false });
   if (assetId) request = request.eq("asset_id", assetId);
-  const { data, error } = await withTimeout(request, 20000, `Memuat ${table}`);
+  const { data, error } = await withTimeout(request, 20000, "Memuat asset_photos");
   if (error) throw error;
   if (!assetId) state.photos = data || [];
   return data || [];
@@ -322,6 +324,11 @@ function refreshFilters() {
   }
 }
 
+function photosForAsset(assetId) { return state.photos.filter((p) => p.asset_id === assetId && p.is_active !== false); }
+function documentationInfo(assetId) {
+  const count = photosForAsset(assetId).length;
+  return count > 0 ? { code: "complete", label: `Terdokumentasi (${count})` } : { code: "empty", label: "Belum Ada Foto" };
+}
 function filteredAssets() {
   const search = value("search").toLowerCase();
   const area = value("areaFilter");
@@ -341,22 +348,24 @@ function renderAssetTable() {
   state.page = Math.min(Math.max(1, state.page), pages);
   const rows = records.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
   if ($("assetCount")) $("assetCount").textContent = `${records.length.toLocaleString("id-ID")} aset ditemukan`;
-  body.innerHTML = rows.map((asset) => `
-    <tr>
-      <td>${escapeHtml(asset.category || "-")}</td>
-      <td><b>${escapeHtml(asset.tagname || "-")}</b></td>
-      <td class="wrap">${escapeHtml(asset.functional_location || "-")}</td>
-      <td>${escapeHtml(asset.equipment_no || "-")}</td>
-      <td>${escapeHtml(asset.plant_area || "-")}</td>
-      <td>${escapeHtml(asset.area_group || "-")}</td>
-      <td><span class="status">${escapeHtml(asset.status || "Active")}</span></td>
+  body.innerHTML = rows.map((asset) => {
+    const doc = documentationInfo(asset.id);
+    return `<tr class="asset-row doc-${doc.code}">
+      <td class="col-category">${escapeHtml(asset.category || "-")}</td>
+      <td class="col-tag"><button type="button" class="tag-link" data-detail="${escapeHtml(asset.id)}">${escapeHtml(asset.tagname || "-")}</button></td>
+      <td class="wrap col-funloc">${escapeHtml(asset.functional_location || "-")}</td>
+      <td class="col-equipment">${escapeHtml(asset.equipment_no || "-")}</td>
+      <td class="col-plant">${escapeHtml(asset.plant_area || "-")}</td>
+      <td class="col-area">${escapeHtml(asset.area_group || "-")}</td>
+      <td class="col-status"><span class="status">${escapeHtml(asset.status || "Active")}</span></td>
+      <td class="col-doc"><span class="doc-badge ${doc.code}">${doc.code === "complete" ? "✓" : "!"} ${escapeHtml(doc.label)}</span></td>
       <td class="row-actions">
+        ${canDocument() ? `<button type="button" class="primary photo-main-btn" data-photo="${escapeHtml(asset.id)}">📷 Dokumentasi</button>` : ""}
         <button type="button" data-detail="${escapeHtml(asset.id)}">Detail</button>
-        ${canDocument() ? `<button type="button" data-photo="${escapeHtml(asset.id)}">Foto</button>` : ""}
         ${canDocument() ? `<button type="button" data-edit="${escapeHtml(asset.id)}">Edit</button>` : ""}
         ${isAdmin() ? `<button type="button" class="danger" data-delete="${escapeHtml(asset.id)}">Hapus</button>` : ""}
-      </td>
-    </tr>`).join("");
+      </td></tr>`;
+  }).join("");
   qa("[data-detail]", body).forEach((button) => button.addEventListener("click", () => openAssetDetail(button.dataset.detail)));
   qa("[data-photo]", body).forEach((button) => button.addEventListener("click", () => openPhotoManager(button.dataset.photo)));
   qa("[data-edit]", body).forEach((button) => button.addEventListener("click", () => openEditor(button.dataset.edit)));
@@ -565,15 +574,35 @@ function resetPhotoForm() {
   q("#photoPreviewWrap span")?.classList.remove("hidden");
 }
 
-function selectPhotoFile(event) {
+async function compressPhotoFile(file, maxBytes = PHOTO_TARGET_MAX) {
+  const bitmap = await createImageBitmap(file);
+  let scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  let quality = 0.78;
+  let blob;
+  for (let i = 0; i < 6; i += 1) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext("2d", { alpha: false }).drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (blob.size <= maxBytes) break;
+    scale *= 0.82; quality = Math.max(0.48, quality - 0.08);
+  }
+  bitmap.close?.();
+  return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg", lastModified: Date.now() });
+}
+async function selectPhotoFile(event) {
   const file = event.target.files?.[0];
   if (!file) return;
   const allowed = ["image/jpeg", "image/png", "image/webp"];
   if (!allowed.includes(file.type)) return notify("Format harus JPG, PNG, atau WebP.", "error");
   if (file.size > PHOTO_MAX_SIZE) return notify("Ukuran foto maksimal 5 MB.", "error");
   if (state.selectedPhotoPreview?.startsWith("blob:")) URL.revokeObjectURL(state.selectedPhotoPreview);
-  state.selectedPhotoFile = file;
-  state.selectedPhotoPreview = URL.createObjectURL(file);
+  notify("Mengompres foto...", "info");
+  const compressed = await compressPhotoFile(file);
+  state.selectedPhotoFile = compressed;
+  state.selectedPhotoPreview = URL.createObjectURL(compressed);
+  notify(`Foto siap (${Math.round(compressed.size / 1024)} KB).`, "success");
   $("photoPreview").src = state.selectedPhotoPreview;
   $("photoPreview").classList.remove("hidden");
   q("#photoPreviewWrap span")?.classList.add("hidden");
@@ -629,7 +658,9 @@ async function savePhotoDocumentation(event) {
     const { error } = await query;
     if (error) throw error;
     resetPhotoForm();
+    await loadPhotos().catch(() => {});
     await renderPhotoGallery(asset.id);
+    renderAssetTable();
     notify("Dokumentasi foto berhasil disimpan.", "success");
   } catch (error) {
     console.error(error);
@@ -651,7 +682,7 @@ async function renderPhotoGallery(assetId) {
     }
     gallery.innerHTML = photos.map((photo) => `
       <article class="photo-card ${photo.is_primary ? "primary-photo" : ""}">
-        <img src="${escapeHtml(photo.photo_url)}" alt="${escapeHtml(photo.photo_type)}" loading="lazy">
+        <img class="zoomable-photo" data-full-photo="${escapeHtml(photo.photo_url)}" src="${escapeHtml(photo.photo_url)}" alt="${escapeHtml(photo.photo_type)}" loading="lazy">
         <div class="photo-card-body">
           <b>${escapeHtml(photo.photo_type)}${photo.is_primary ? " · Utama" : ""}</b>
           <p>${escapeHtml(photo.description || "Tanpa deskripsi")}</p>
@@ -664,11 +695,18 @@ async function renderPhotoGallery(assetId) {
       </article>`).join("");
     qa("[data-edit-photo]", gallery).forEach((button) => button.addEventListener("click", () => editPhoto(button.dataset.editPhoto, photos)));
     qa("[data-delete-photo]", gallery).forEach((button) => button.addEventListener("click", () => deletePhoto(button.dataset.deletePhoto, photos)));
+    qa("[data-full-photo]", gallery).forEach((img) => img.addEventListener("click", () => openPhotoFullscreen(img.dataset.fullPhoto)));
   } catch (error) {
     gallery.innerHTML = `<p>Gagal memuat foto: ${escapeHtml(error.message)}</p>`;
   }
 }
 
+function openPhotoFullscreen(url) {
+  const viewer = document.createElement("div"); viewer.className = "photo-fullscreen";
+  viewer.innerHTML = `<button type="button" aria-label="Tutup">×</button><img src="${escapeHtml(url)}" alt="Foto aset ukuran penuh">`;
+  viewer.addEventListener("click", (e) => { if (e.target === viewer || e.target.tagName === "BUTTON") viewer.remove(); });
+  document.body.appendChild(viewer);
+}
 function editPhoto(photoId, photos) {
   const photo = photos.find((row) => row.id === photoId);
   if (!photo) return;
@@ -694,7 +732,9 @@ async function deletePhoto(photoId, photos) {
     if (photo?.photo_path) await supabaseClient.storage.from(PHOTO_BUCKET).remove([photo.photo_path]);
     const { error } = await supabaseClient.from("asset_photos").delete().eq("id", photoId);
     if (error) throw error;
+    await loadPhotos().catch(() => {});
     await renderPhotoGallery(state.selectedAssetId);
+    renderAssetTable();
     notify("Foto berhasil dihapus.", "success");
   } catch (error) {
     notify(`Gagal menghapus foto: ${error.message}`, "error");
@@ -720,7 +760,7 @@ async function openAssetDetail(assetId) {
   </div>`;
   show("detailModal", true);
   const photos = await loadPhotos(assetId).catch(() => []);
-  $("detailPhotos").innerHTML = photos.length ? `<div class="photo-gallery">${photos.map((photo) => `<article class="photo-card ${photo.is_primary ? "primary-photo" : ""}"><img src="${escapeHtml(photo.photo_url)}" alt="Dokumentasi"><div class="photo-card-body"><b>${escapeHtml(photo.photo_type)}</b><p>${escapeHtml(photo.description)}</p><small>${escapeHtml(photo.condition)} · ${new Date(photo.taken_at || photo.uploaded_at).toLocaleString("id-ID")}</small></div></article>`).join("")}</div>` : "<p>Foto belum tersedia.</p>";
+  $("detailPhotos").innerHTML = photos.length ? `<div class="photo-gallery">${photos.map((photo) => `<article class="photo-card ${photo.is_primary ? "primary-photo" : ""}"><img class="zoomable-photo" data-full-photo="${escapeHtml(photo.photo_url)}" src="${escapeHtml(photo.photo_url)}" alt="Dokumentasi"><div class="photo-card-body"><b>${escapeHtml(photo.photo_type)}</b><p>${escapeHtml(photo.description)}</p><small>${escapeHtml(photo.condition)} · ${new Date(photo.taken_at || photo.uploaded_at).toLocaleString("id-ID")}</small></div></article>`).join("")}</div>` : "<p>Foto belum tersedia.</p>";
 }
 
 function ensureDetailModal() {
@@ -857,6 +897,34 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
+async function imageUrlToCompressedBase64(url) {
+  const response = await fetch(url); if (!response.ok) throw new Error(`Foto gagal diambil (${response.status})`);
+  const file = new File([await response.blob()], "photo.jpg", { type: response.headers.get("content-type") || "image/jpeg" });
+  const compressed = await compressPhotoFile(file, 180 * 1024);
+  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = reject; reader.readAsDataURL(compressed); });
+}
+async function exportExcelWithPhotos() {
+  if (!window.ExcelJS) return notify("Library Excel belum dimuat.", "error");
+  setBusy(true, "Membuat Excel dengan foto terkompresi...");
+  try {
+    const workbook = new ExcelJS.Workbook(); workbook.creator = "PIM EI & OT";
+    const assetsSheet = workbook.addWorksheet("Asset Register", { views: [{ state: "frozen", ySplit: 1 }] });
+    assetsSheet.columns = [
+      {header:"No",key:"no",width:7},{header:"Category",key:"category",width:20},{header:"Tagname",key:"tagname",width:22},
+      {header:"Functional Location",key:"funloc",width:42},{header:"Equipment No.",key:"equipment",width:22},{header:"Area",key:"area",width:18},
+      {header:"Condition",key:"condition",width:13},{header:"Status",key:"status",width:12},{header:"Dokumentasi",key:"doc",width:22},{header:"Jumlah Foto",key:"photos",width:12}
+    ];
+    filteredAssets().forEach((a,i)=>{ const count=photosForAsset(a.id).length; assetsSheet.addRow({no:i+1,category:a.category,tagname:a.tagname,funloc:a.functional_location,equipment:a.equipment_no,area:a.area_group,condition:a.condition,status:a.status,doc:count?"Terdokumentasi":"Belum Ada Foto",photos:count}); });
+    const photoSheet = workbook.addWorksheet("Photo Report", { views: [{ state: "frozen", ySplit: 1 }] });
+    photoSheet.columns=[{header:"No",key:"no",width:7},{header:"Tagname",key:"tag",width:22},{header:"Functional Location",key:"fl",width:40},{header:"Area",key:"area",width:18},{header:"Condition",key:"cond",width:13},{header:"Keterangan",key:"desc",width:42},{header:"Tanggal",key:"date",width:20},{header:"Foto",key:"photo",width:30}];
+    const selectedIds = new Set(filteredAssets().map(a=>a.id)); const photos = state.photos.filter(p=>selectedIds.has(p.asset_id) && p.is_active!==false);
+    let rowNo=0;
+    for (const photo of photos) { rowNo++; const asset=state.assets.find(a=>a.id===photo.asset_id)||{}; const row=photoSheet.addRow({no:rowNo,tag:asset.tagname||photo.tagname,fl:asset.functional_location||photo.functional_location,area:asset.area_group||photo.area_group,cond:photo.condition||asset.condition,desc:photo.description,date:new Date(photo.taken_at||photo.uploaded_at).toLocaleString("id-ID")}); row.height=105; try { const b64=await imageUrlToCompressedBase64(photo.photo_url); const imageId=workbook.addImage({base64:b64,extension:"jpeg"}); photoSheet.addImage(imageId,{tl:{col:7.08,row:row.number-0.92},ext:{width:190,height:130}}); } catch(e) { row.getCell(8).value="Foto tidak dapat diunduh"; } }
+    [assetsSheet,photoSheet].forEach(ws=>{ ws.getRow(1).font={bold:true,color:{argb:"FFFFFFFF"}}; ws.getRow(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0F766E"}}; ws.autoFilter={from:{row:1,column:1},to:{row:1,column:ws.columnCount}}; });
+    const buffer=await workbook.xlsx.writeBuffer(); const link=document.createElement("a"); link.href=URL.createObjectURL(new Blob([buffer],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})); link.download=`PIM-Asset-Photo-Report-${new Date().toISOString().slice(0,10)}.xlsx`; link.click(); setTimeout(()=>URL.revokeObjectURL(link.href),1000); notify("Excel dengan foto berhasil dibuat.","success");
+  } catch(error) { notify(`Export Excel gagal: ${error.message}`,"error"); } finally { setBusy(false); }
+}
+
 /* ======================== EMAIL REPORT ======================== */
 
 async function sendManualReport() {
@@ -970,6 +1038,7 @@ window.openPhotoManager = openPhotoManager;
 window.deleteAsset = deleteAsset;
 window.importExcel = importExcel;
 window.exportCSV = exportCSV;
+window.exportExcelWithPhotos = exportExcelWithPhotos;
 window.sendManualReport = sendManualReport;
 
 async function startApplicationSafely() {

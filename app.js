@@ -250,12 +250,13 @@ async function loadAssets() {
 
 async function loadPhotos(assetId = null) {
   if (!supabaseClient) return [];
-  let request = supabaseClient.from("asset_photos").select("*").eq("is_active", true).order("uploaded_at", { ascending: false });
+  let request = supabaseClient.from("asset_photos").select("*").order("uploaded_at", { ascending: false });
   if (assetId) request = request.eq("asset_id", assetId);
   const { data, error } = await withTimeout(request, 20000, "Memuat foto aset");
   if (error) throw error;
-  if (!assetId) state.photos = data || [];
-  return data || [];
+  const activePhotos = (data || []).filter((photo) => photo.is_active !== false);
+  if (!assetId) state.photos = activePhotos;
+  return activePhotos;
 }
 
 /* ======================== DASHBOARD ======================== */
@@ -349,6 +350,40 @@ function refreshFilters() {
   }
 }
 
+function activePhotosForAsset(assetId) {
+  const id = String(assetId ?? "").trim();
+  return (state.photos || []).filter((photo) =>
+    String(photo.asset_id ?? "").trim() === id && photo.is_active !== false
+  );
+}
+
+function assetDocumentationStatus(asset) {
+  const photoCount = activePhotosForAsset(asset.id).length;
+  const hasPhoto = photoCount > 0;
+  const isActive = String(asset.status || "").trim().toLowerCase() === "active";
+  const hasFunloc = Boolean(String(asset.functional_location || "").trim());
+  const hasEquipment = Boolean(String(asset.equipment_no || asset.equipment_number || "").trim());
+  const isComplete = hasPhoto && isActive && hasFunloc && hasEquipment;
+
+  const missing = [];
+  if (!hasPhoto) missing.push("foto");
+  if (!isActive) missing.push("status Active");
+  if (!hasFunloc) missing.push("Functional Location");
+  if (!hasEquipment) missing.push("Equipment No.");
+
+  return isComplete
+    ? {
+        code: "complete",
+        text: `Data & Dokumentasi Lengkap (${photoCount} foto)`,
+        missing: []
+      }
+    : {
+        code: "incomplete",
+        text: `Belum Lengkap: ${missing.join(", ")}`,
+        missing
+      };
+}
+
 function filteredAssets() {
   const search = value("search").toLowerCase();
   const area = value("areaFilter");
@@ -368,22 +403,30 @@ function renderAssetTable() {
   state.page = Math.min(Math.max(1, state.page), pages);
   const rows = records.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
   if ($("assetCount")) $("assetCount").textContent = `${records.length.toLocaleString("id-ID")} aset ditemukan`;
-  body.innerHTML = rows.map((asset) => `
-    <tr>
-      <td>${escapeHtml(asset.category || "-")}</td>
-      <td><b>${escapeHtml(asset.tagname || "-")}</b></td>
-      <td class="wrap">${escapeHtml(asset.functional_location || "-")}</td>
-      <td>${escapeHtml(asset.equipment_no || "-")}</td>
-      <td>${escapeHtml(asset.plant_area || "-")}</td>
-      <td>${escapeHtml(asset.area_group || "-")}</td>
-      <td><span class="status">${escapeHtml(asset.status || "Active")}</span></td>
+  body.innerHTML = rows.map((asset) => {
+    const documentation = assetDocumentationStatus(asset);
+    return `
+    <tr class="asset-row asset-completeness-${documentation.code}">
+      <td class="col-category">${escapeHtml(asset.category || "-")}</td>
+      <td class="col-tag"><b>${escapeHtml(asset.tagname || "-")}</b></td>
+      <td class="wrap col-funloc">${escapeHtml(asset.functional_location || "-")}</td>
+      <td class="col-equipment">${escapeHtml(asset.equipment_no || "-")}</td>
+      <td class="col-plant">${escapeHtml(asset.plant_area || "-")}</td>
+      <td class="col-area">${escapeHtml(asset.area_group || "-")}</td>
+      <td class="col-status"><span class="status">${escapeHtml(asset.status || "Active")}</span></td>
+      <td class="col-documentation">
+        <span class="asset-completeness-badge ${documentation.code}">
+          ${documentation.code === "complete" ? "✓" : "!"} ${escapeHtml(documentation.text)}
+        </span>
+      </td>
       <td class="row-actions">
         <button type="button" data-detail="${escapeHtml(asset.id)}">Detail</button>
         ${canDocument() ? `<button type="button" data-photo="${escapeHtml(asset.id)}">Foto</button>` : ""}
         ${canDocument() ? `<button type="button" data-edit="${escapeHtml(asset.id)}">Edit</button>` : ""}
         ${isAdmin() ? `<button type="button" class="danger" data-delete="${escapeHtml(asset.id)}">Hapus</button>` : ""}
       </td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
   qa("[data-detail]", body).forEach((button) => button.addEventListener("click", () => openAssetDetail(button.dataset.detail)));
   qa("[data-photo]", body).forEach((button) => button.addEventListener("click", () => openPhotoManager(button.dataset.photo)));
   qa("[data-edit]", body).forEach((button) => button.addEventListener("click", () => openEditor(button.dataset.edit)));
@@ -656,7 +699,9 @@ async function savePhotoDocumentation(event) {
     const { error } = await query;
     if (error) throw error;
     resetPhotoForm();
+    await loadPhotos().catch(() => {});
     await renderPhotoGallery(asset.id);
+    renderAssetTable();
     notify("Dokumentasi foto berhasil disimpan.", "success");
   } catch (error) {
     console.error(error);
@@ -721,7 +766,9 @@ async function deletePhoto(photoId, photos) {
     if (photo?.photo_path) await supabaseClient.storage.from(PHOTO_BUCKET).remove([photo.photo_path]);
     const { error } = await supabaseClient.from("asset_photos").delete().eq("id", photoId);
     if (error) throw error;
+    await loadPhotos().catch(() => {});
     await renderPhotoGallery(state.selectedAssetId);
+    renderAssetTable();
     notify("Foto berhasil dihapus.", "success");
   } catch (error) {
     notify(`Gagal menghapus foto: ${error.message}`, "error");

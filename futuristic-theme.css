@@ -24,3 +24,116 @@
   #assetRows .row-actions button{color:#f7fbfc!important;background:#132a35!important;border-color:#33515d!important}
   #assetRows .row-actions button:hover{background:#1a3946!important}
 }
+/* ============================================================
+   FIX DETAIL ASET: kartu putih dan tulisan tidak terbaca
+   Tempel di PALING BAWAH futuristic-theme.css
+   ============================================================ */
+
+#detailModal .dialog {
+  color: #f1f7f8 !important;
+  background: linear-gradient(145deg, #102a35, #081a23) !important;
+  border: 1px solid #31505d !important;
+}
+
+#detailModal #detailTitle,
+#detailModal h2,
+#detailModal h3 {
+  color: #f8fbfc !important;
+}
+
+#detailModal .detail-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+#detailModal .detail-grid > div {
+  min-width: 0 !important;
+  padding: 15px 16px !important;
+  color: #d7e4e8 !important;
+  background: linear-gradient(145deg, #142f3b, #0d242e) !important;
+  border: 1px solid #31505d !important;
+  border-radius: 15px !important;
+  line-height: 1.55 !important;
+  overflow-wrap: anywhere !important;
+  box-shadow: none !important;
+}
+
+#detailModal .detail-grid > div b {
+  display: inline-block !important;
+  margin-bottom: 4px !important;
+  color: #72d6ca !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+}
+
+#detailModal .photo-gallery {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+}
+
+#detailModal .photo-card {
+  color: #d7e4e8 !important;
+  background: #0d242e !important;
+  border: 1px solid #31505d !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+}
+
+#detailModal .photo-card img {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 180px !important;
+  max-height: 65vh !important;
+  object-fit: contain !important;
+  background: #061018 !important;
+}
+
+#detailModal .photo-card-body {
+  padding: 15px !important;
+  color: #d7e4e8 !important;
+  background: #0d242e !important;
+}
+
+#detailModal .photo-card-body b {
+  color: #f8fbfc !important;
+}
+
+#detailModal .photo-card-body p,
+#detailModal .photo-card-body small {
+  color: #b9cbd1 !important;
+}
+
+#detailModal .close {
+  color: #f8fbfc !important;
+  background: transparent !important;
+  border: 0 !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+@media (max-width: 760px) {
+  #detailModal {
+    padding: 12px !important;
+  }
+
+  #detailModal .dialog {
+    width: 100% !important;
+    max-height: 94vh !important;
+    padding: 26px 20px !important;
+    border-radius: 28px !important;
+  }
+
+  #detailModal .detail-grid,
+  #detailModal .photo-gallery {
+    grid-template-columns: 1fr !important;
+  }
+
+  #detailModal .detail-grid > div {
+    min-height: 76px !important;
+  }
+}

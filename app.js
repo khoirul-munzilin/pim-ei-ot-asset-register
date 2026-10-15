@@ -277,13 +277,33 @@ function renderDashboard() {
     ].map(([label, number]) => `<div class="kpi"><span>${label}</span><b>${Number(number).toLocaleString("id-ID")}</b></div>`).join("");
   }
   const sortedAreas = Object.entries(areaCounts).sort((a, b) => b[1] - a[1]);
-  const maximum = sortedAreas[0]?.[1] || 1;
+  const totalAssets = Math.max(1, state.assets.length);
+  const areaIcons = {
+    "AREA BELUM DITENTUKAN": "?", "HMP A": "H", "HMP B": "H", "HMP": "H",
+    "RDS A": "R", "RDS B": "R", "RDS": "R", "OFFICE": "O",
+    "PACKING A": "P", "PACKING B": "P", "MESS": "M", "WAREHOUSE": "W",
+    "UTILITY": "U", "LABORATORY": "L", "PELLETIZING": "P", "ENGINEERING": "E",
+    "GOH": "G", "GAD": "G", "WWTP": "W"
+  };
   if ($("areaChart")) {
-    $("areaChart").innerHTML = sortedAreas.map(([area, count]) => `
-      <button class="bar-row" type="button" data-area="${escapeHtml(area)}">
-        <span class="bar-label"><span>${escapeHtml(area)}</span><b>${count}</b></span>
-        <span class="bar"><i style="width:${(count / maximum) * 100}%"></i></span>
-      </button>`).join("");
+    $("areaChart").className = "area-kpi-grid";
+    $("areaChart").innerHTML = sortedAreas.map(([area, count], index) => {
+      const percent = (count / totalAssets) * 100;
+      return `
+        <button class="area-percent-card area-percent-color-${(index % 6) + 1}" type="button" data-area="${escapeHtml(area)}">
+          <span class="area-percent-head">
+            <span class="area-percent-icon">${areaIcons[area] || "A"}</span>
+            <span class="area-percent-arrow">↗</span>
+          </span>
+          <span class="area-percent-name">${escapeHtml(area)}</span>
+          <span class="area-percent-main">
+            <strong>${percent.toLocaleString("id-ID", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong>
+            <small>${Number(count).toLocaleString("id-ID")} aset</small>
+          </span>
+          <span class="area-percent-track"><i style="width:${Math.max(2, percent)}%"></i></span>
+          <span class="area-percent-foot">dari ${Number(totalAssets).toLocaleString("id-ID")} total aset</span>
+        </button>`;
+    }).join("");
     qa("[data-area]", $("areaChart")).forEach((button) => button.addEventListener("click", () => openArea(button.dataset.area)));
   }
   if ($("recent")) {
